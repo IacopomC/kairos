@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kairos_visualizer"
+version = "0.1.0"
+description = "Optional Rerun visualizer for Kairos flow scene-graph recordings"
+requires-python = ">=3.9"
+dependencies = ["numpy", "rerun-sdk>=0.20"]
+
+[project.scripts]
+kairos-visualize = "kairos_visualizer.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["kairos_visualizer*"]

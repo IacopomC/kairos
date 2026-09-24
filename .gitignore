@@ -1,0 +1,27 @@
+# build / install artifacts
+build/
+devel/
+install/*
+!install/kairos.rosinstall
+logs/
+*.so
+*.o
+*.a
+*.pyc
+__pycache__/
+*.egg-info/
+.eggs/
+dist/
+_skbuild/
+# generated API docs (doxygen Doxyfile -> doc/api)
+doc/api/
+# editor / OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# local virtualenvs (e.g. kairos_visualizer render env)
+.venv/
+kairos_visualizer/.venv/

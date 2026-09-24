@@ -1,0 +1,177 @@
+---
+# ATC shopping mall. Candidate periods cover the hourly, half-daily, daily
+# and weekly cycles of a multi-session recording.
+enable_flow_temporal_module: true
+flow_temporal:
+  publish_metrics: false             # Python pipeline has no ROS publisher; metrics noop in offline.
+  publish_voxel_markers: false       # Same: voxel markers noop in offline.
+  min_tsdf_weight_for_visibility: 0.001
+  worker_rate_hz: 5.0
+  heavy_maintenance_rate_hz: 0.0333
+  max_queue_size: 10
+  prediction_horizon_s: 1.0
+  place_summary_max_nodes: 2000
+  max_components_per_place: 8
+  component_min_weight: 0.0   # keep every slot in the place summary, however low its weight
+  deformation_knn: 4
+  deformation_tolerance_s: 10.0
+  flow:
+    # One log-PMI sample per window, formed from that window's pairs alone. The
+    # window follows from the shortest candidate period: 12 samples per cycle.
+    edge_coupling_samples_per_period: 12
+    edge_coupling_window_min_pairs: 2
+    fixed_mu_rho: 1.1
+    fixed_sigma_theta: 0.4
+    fixed_sigma_rho: 0.3
+    fixed_sigma_cross: 0.0
+    speed_scatter_prior_obs: 5.0  # weight (in observations) of fixed_sigma_rho in the speed uncertainty
+    enable_timing: true
+    candidate_periods: [3600.0, 43200.0, 86400.0, 604800.0] # 1h, 12h, daily, weekly
+    presence_rate_window_s: 120.0  # feeds one windowed-rate sample per 2 min of exposure to the presence spectral predictor; must sit well below the shortest candidate period (1 h)
+    visit_gap_s: 2.0
+    visit_max_s: 10.0
+    nudft_order: 10  # highest spectral order the per-cell gate may select (above the number of candidate periods: the gate chooses freely)
+    voxel_size_m: 0.4  # must match active_window.volumetric_map.voxel_size
+    nudft_min_obs: 10
+map_window:
+  type: spatial
+  max_radius_m: 5.0    # Matches the camera max range; geometry outside the field-of-view ring is archived.
+active_window:
+  volumetric_map:
+    voxels_per_side: 16
+    voxel_size: 0.4
+    truncation_distance: 0.6   # Must be >= the voxel size (0.4), or the GVD and layer 3 starve.
+  tsdf:
+    semantic_integrator:
+      type: MLESemanticIntegrator
+frontend:
+  pgmo:
+    time_horizon: 15.0
+    d_graph_resolution: 2.5
+    mesh_resolution: 0.2
+  objects:
+    min_cluster_size: 40
+    cluster_tolerance: 0.25
+  surface_places:
+    type: place_2d
+    prefix: P
+    pure_final_place_size: 0.5
+    place_memory_radius_m: 5
+    active_place_radius_m: 5.0
+    mesh_active_window_m: 20.0
+    cluster_tolerance: 0.6              # Must exceed the mesh spacing (0.4), or layer 20 comes out empty.
+    min_cluster_size: 3
+    max_cluster_size: 100000
+    min_final_place_size: 3
+    min_final_place_points: 10
+    place_max_neighbor_z_diff: 0.5
+    place_overlap_threshold: 0.0
+    connection_ellipse_scale_factor: 0.8   # Links surface places; without it they stay disconnected.
+  freespace_places:
+    type: gvd
+    filter_places: true
+    min_places_component_size: 3
+    filter_ground: false
+    gvd:
+      max_distance_m: 4.5
+      min_distance_m: 0.2
+      min_diff_m: 0.1
+      voronoi_config:
+        mode: L1_THEN_ANGLE
+        min_distance_m: 0.30
+        parent_l1_separation: 20
+        parent_cos_angle_separation: 0.2
+    graph:
+      type: CompressionGraphExtractor
+      compression_distance_m: 1.3
+      min_node_distance_m: 0.4
+      min_edge_distance_m: 0.15
+      node_merge_distance_m: 0.3
+      merge_policy: distance
+    tsdf_interpolator:
+      type: ""   # Empty = native-resolution GVD; downsampling to 2x voxel starves layer 3.
+      # ratio: 2   # disabled with interpolator
+  use_frontiers: false
+  frontier_places:
+    type: voxel_clustering
+    cluster_tolerance: 0.3
+    min_cluster_size: 10
+    max_cluster_size: 100000
+    max_place_radius: 5
+    dense_frontiers: false
+    frontier_splitting_threshold: 0.2
+    point_threshold: 10
+    recent_block_distance: 25
+    minimum_relative_z: -1.
+    maximum_relative_z: 1
+backend:
+  add_places_to_deformation_graph: false   # Places follow the map deformation (interpFromValues) rather than becoming batch-optimized variables, which would form a large dense clique against a dense layer 3.
+  optimize_on_lc: true
+  enable_node_merging: true
+  update_functors:
+    agents:
+      type: UpdateAgentsFunctor
+    objects:
+      type: UpdateObjectsFunctor
+    surface_places:
+      type: Update2dPlacesFunctor
+    places:
+      type: UpdatePlacesFunctor
+    frontiers:
+      type: UpdateFrontiersFunctor
+    archetypes:
+      type: UpdateArchetypesFunctor
+      dominant_weight_threshold: 0.20
+      min_flow_support: 1
+      min_probability: 0.05
+      presence_horizon_s: 60.0
+    rooms:
+      type: UpdateRoomsFunctor
+      room_finder:
+        min_dilation_m: 0.5
+        max_dilation_m: 1.2
+        min_component_size: 10
+        min_room_size: 10
+        dilation_threshold_mode: PLATEAU
+        min_lifetime_length_m: 0.1
+        plateau_ratio: 0.15
+        clustering_mode: NEIGHBORS
+        dilation_diff_threshold_m: -1.0
+    buildings:
+      type: UpdateBuildingsFunctor
+    zmq_labels:
+      type: ZmqRoomLabelUpdater
+  pgmo:
+    run_mode: FULL  # kimera_pgmo run mode FULL is required
+    embed_trajectory_delta_t: 5.0
+    num_interp_pts: 3
+    interp_horizon: 10.0
+    enable_sparsify: true
+    trans_node_dist: 1.0
+    rot_node_dist: 1.2
+    rpgo:
+      odom_trans_threshold: 0.05
+      odom_rot_threshold: 0.01
+      pcm_trans_threshold: -1
+      pcm_rot_threshold: -1
+      lm_diagonal_damping: true
+      gnc_alpha: 0.9
+      gnc_max_iterations: 100
+      gnc_mu_step: 1.6
+      gnc_cost_tolerance: 1.0e-05
+      gnc_weight_tolerance: 1.0e-04
+      gnc_fix_prev_inliers: true
+      verbosity: UPDATE
+      solver: LM
+    add_initial_prior: true
+    covariance:
+      odom: 1.0e-02
+      loop_close: 5.0e-02
+      sg_loop_close: 1.0e-01
+      prior: 1.0e-02
+      mesh_mesh: 1.0e-02
+      pose_mesh: 1.0e-02
+      place_mesh: 1.0e-02
+      place_edge: 10.0
+      place_merge: 10.0
+      object_merge: 10.0

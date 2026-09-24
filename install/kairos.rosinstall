@@ -1,0 +1,69 @@
+# KAIROS workspace manifest (vcstool / rosinstall format).
+#
+# Usage (from the catkin workspace root, after cloning kairos into src/):
+#   vcs import src < src/kairos/install/kairos.rosinstall
+#
+# The Docker image (docker/Dockerfile) imports this same manifest.
+# KAIROS packages + Hydra forks track `main` (IacopomC). Upstream MIT-SPARK
+# dependencies are pinned to a commit, or to their frozen `archive/ros_noetic`
+# branch.
+
+# ---- KAIROS + Hydra forks (IacopomC) ----
+- git:
+    local-name: kairos-suite
+    uri: https://github.com/IacopomC/kairos-suite.git
+    version: main
+- git:
+    local-name: kairos-ros
+    uri: https://github.com/IacopomC/kairos-ros.git
+    version: main
+- git:
+    local-name: kairos-msgs
+    uri: https://github.com/IacopomC/kairos-msgs.git
+    version: main
+- git:
+    local-name: hydra-kairos
+    uri: https://github.com/IacopomC/hydra-kairos.git
+    version: main
+- git:
+    local-name: hydra-kairos-ros
+    uri: https://github.com/IacopomC/hydra-kairos-ros.git
+    version: main
+- git:
+    local-name: spark-dsg-kairos
+    uri: https://github.com/IacopomC/spark-dsg-kairos.git
+    version: main
+- git:
+    local-name: odom_array_msg
+    uri: https://github.com/IacopomC/odom_array_msg.git
+    version: main
+
+# ---- unmodified upstream dependencies (MIT-SPARK), pinned ----
+- git:
+    local-name: config_utilities
+    uri: https://github.com/MIT-SPARK/config_utilities.git
+    version: archive/ros_noetic
+- git:
+    local-name: semantic_inference
+    uri: https://github.com/MIT-SPARK/semantic_inference.git
+    version: archive/ros_noetic
+- git:
+    local-name: Kimera-PGMO
+    uri: https://github.com/MIT-SPARK/Kimera-PGMO.git
+    version: 7a67674
+- git:
+    local-name: pose_graph_tools
+    uri: https://github.com/MIT-SPARK/pose_graph_tools.git
+    version: dbc893f   # last ROS 1 (catkin) messages; same core library as the ROS 2 commits
+- git:
+    local-name: Kimera-RPGO
+    uri: https://github.com/MIT-SPARK/Kimera-RPGO.git
+    version: d28b4df
+- git:
+    local-name: Spatial-Hash
+    uri: https://github.com/MIT-SPARK/Spatial-Hash.git
+    version: 8045892
+- git:
+    local-name: TEASER-plusplus
+    uri: https://github.com/MIT-SPARK/TEASER-plusplus.git
+    version: e2f6f17

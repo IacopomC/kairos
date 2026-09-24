@@ -1,0 +1,47 @@
+# Build environment for the KAIROS / Hydra catkin workspace.
+# The workspace source is NOT baked into the image; it is mounted at runtime
+# (see run.sh) so the migration can be re-built without rebuilding the image.
+FROM ros:noetic-perception-focal
+
+ENV DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-c"]
+
+# Newer CMake (config_utilities needs >=3.22; focal ships 3.16) from Kitware,
+# build tooling, nlohmann_json (spark_dsg), and GTSAM (borglab PPA, the
+# version Hydra targets on Noetic).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        software-properties-common ca-certificates wget gnupg \
+    && wget -qO - https://apt.kitware.com/keys/kitware-archive-latest.asc \
+        | gpg --dearmor - > /usr/share/keyrings/kitware-archive-keyring.gpg \
+    && echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' \
+        > /etc/apt/sources.list.d/kitware.list \
+    && add-apt-repository -y ppa:borglab/gtsam-release-4.1 \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        cmake \
+        build-essential git \
+        python3-pip python3-catkin-tools python3-rosdep python3-vcstool \
+        libeigen3-dev libgoogle-glog-dev libgflags-dev \
+        libboost-all-dev nlohmann-json3-dev \
+        libzmq3-dev \
+        libgtsam-dev libgtsam-unstable-dev \
+        python3-dev \
+        ros-noetic-rviz \
+        ros-noetic-dynamic-reconfigure \
+        ros-noetic-tf2-eigen \
+        ros-noetic-tf2-geometry-msgs \
+        ros-noetic-rosbag \
+        ros-noetic-interactive-markers \
+        ros-noetic-image-transport \
+        ros-noetic-cv-bridge \
+        ros-noetic-pcl-ros \
+    && rm -rf /var/lib/apt/lists/*
+
+# uv as a fast pip drop-in, and a MODERN pybind11 (focal's apt pybind11-dev is
+# 2.4.x and lacks py::module_ / pybind11/stl/filesystem.h that the bindings use).
+RUN pip3 install --no-cache-dir uv "pybind11>=2.11"
+
+# rosdep is pre-initialised in the official ROS image; just update it.
+RUN rosdep update || true
+
+WORKDIR /ws
+CMD ["/bin/bash"]

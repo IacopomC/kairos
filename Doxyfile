@@ -1,0 +1,62 @@
+# Doxygen configuration for KAIROS.
+#
+# Generate browsable API docs from the in-source Doxygen comments:
+#
+#     doxygen Doxyfile
+#
+# Output is written to doc/api/html/index.html. Only the options that differ
+# from Doxygen's defaults are set here; everything else uses the default.
+
+#---------------------------------------------------------------------------
+# Project
+#---------------------------------------------------------------------------
+PROJECT_NAME           = "KAIROS"
+PROJECT_NUMBER         = 1.0.0
+PROJECT_BRIEF          = "4D Scene Graphs for Periodic Flow Dynamics"
+OUTPUT_DIRECTORY       = doc/api
+
+#---------------------------------------------------------------------------
+# Input
+#---------------------------------------------------------------------------
+INPUT                  = include src README.md doc/pipeline_overview.md
+FILE_PATTERNS          = *.h *.hpp *.cpp *.md
+RECURSIVE              = YES
+USE_MDFILE_AS_MAINPAGE = README.md
+
+# Keep generated, third-party, and build artefacts out of the docs.
+EXCLUDE                = build install
+EXCLUDE_PATTERNS       = */build/* */install/*
+
+#---------------------------------------------------------------------------
+# Extraction
+#---------------------------------------------------------------------------
+# Document declarations even if their definition lives in a .cpp, and surface
+# the public API broadly. Private members stay hidden by default.
+EXTRACT_ALL            = NO
+EXTRACT_STATIC         = YES
+JAVADOC_AUTOBRIEF      = YES
+QT_AUTOBRIEF           = YES
+MARKDOWN_SUPPORT       = YES
+TAB_SIZE               = 2
+BUILTIN_STL_SUPPORT    = YES
+
+# Map the project's namespace alias so cross-references resolve.
+WARN_IF_UNDOCUMENTED   = NO
+
+#---------------------------------------------------------------------------
+# Output
+#---------------------------------------------------------------------------
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+GENERATE_TREEVIEW      = YES
+SOURCE_BROWSER         = YES
+
+#---------------------------------------------------------------------------
+# Diagrams (only used if Graphviz/dot is installed)
+#---------------------------------------------------------------------------
+HAVE_DOT               = YES
+DOT_IMAGE_FORMAT       = svg
+CLASS_GRAPH            = YES
+COLLABORATION_GRAPH    = NO
+INCLUDE_GRAPH          = NO
+INCLUDED_BY_GRAPH      = NO

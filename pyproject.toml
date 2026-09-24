@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=42", "wheel", "cmake>=3.16", "ninja", "pybind11>=2.11"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kairos"
+version = "1.0.0"
+description = "KAIROS: 4D Scene Graphs for Periodic Flow Dynamics"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+  "click",
+  "numpy",
+  "pyyaml",
+  "scipy",
+  "tqdm",
+  "spark_dsg[viz]",
+  # hydra_python supplies the generic data loaders reused by `kairos run`.
+  # Installed from the hydra-kairos fork (pip install ./hydra-flow), not PyPI.
+]
+
+[project.scripts]
+kairos = "kairos_python.commands.main:cli"
+
+[tool.setuptools]
+include-package-data = true
+packages = [
+  "kairos_python",
+  "kairos_python.commands",
+  "kairos_python.config",
+]
+
+[tool.setuptools.package-dir]
+"kairos_python" = "python/src/kairos_python"
+"kairos_python.config" = "config"

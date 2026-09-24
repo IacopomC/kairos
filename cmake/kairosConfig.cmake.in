@@ -1,0 +1,14 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(hydra)
+find_dependency(config_utilities)
+find_dependency(Eigen3)
+find_dependency(kimera_pgmo)
+find_dependency(spark_dsg)
+find_dependency(spatial_hash)
+find_dependency(nlohmann_json)
+
+include("${CMAKE_CURRENT_LIST_DIR}/kairosTargets.cmake")
+
+check_required_components(kairos)
