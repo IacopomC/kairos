@@ -69,11 +69,10 @@ footer a{color:var(--ink)}
   </nav>
 
   <section id="kairos-animation">
-<canvas id="scene" width="1080" height="1080" role="img" aria-label="Isometric animation explaining Kairos: sparse pedestrian observations become a map-grounded forecast of presence and directional flow."></canvas>
-<div class="controls"><button id="play">Play</button><label id="seek">Animation <input id="timeline" type="range" min="0" max="46" step="0.05" value="0" aria-label="Animation time"><output id="elapsed">0.0 s</output></label><button id="reset">Reset view</button></div>
-<div class="controls"><label>Forecast time <input id="hour" type="range" min="9" max="18" step="0.083333" value="9" aria-label="Forecast hour"><output id="hourLabel">09:00</output></label><button id="auto">Follow story</button><button id="left" aria-label="Rotate camera left">↶ Rotate</button><button id="right" aria-label="Rotate camera right">Rotate ↷</button></div>
-<p>Drag the scene to orbit. Scroll to zoom. Changing forecast time pauses the story in the forecast scene.</p>
-<details><summary>About this animation</summary><p>A conceptual illustration of <em>Kairos: Grounded Forecasting of Presence and Directional Flow in 4D Scene Graphs</em>, by Iacopo Catalano, Julio A. Placed, Javier Civera, and Jorge Peña-Queralta. Kairos stores presence and directional-flow estimates at observed map voxels, forecasts recurrent dynamics, and aggregates those estimates onto navigational nodes. Adjacent nodes of the same motion class form an archetype.</p><p>Colors follow the paper’s hierarchy: green = unimodal (one dominant component), blue = bimodal (two), yellow = diffuse (occupied, no dominant component). The paper also defines static and intersection/multimodal classes; these are omitted from this simplified example. Each navigational node aggregates a local group of smaller flow cells arranged in parallel rows, weighted by their occupancy. All eight heading slots exist; the glyphs emphasize dominant components and show eight equal spokes in diffuse cells. Arrow size illustrates component weight, not speed. A few branch cells shift weight between fixed cardinal and diagonal headings as the query time changes. Colored patches illustrate occupancy separately. The classification threshold and distributions here are illustrative, not fitted Kairos parameters.</p><p>The environment, observations, day sequence, and forecasts are schematic. The vertically separated geometry and flow layers show attributes anchored to the same map; they are not separate physical maps. Robot motion is scripted, not an evaluated avoidance planner.</p></details>
+    <canvas id="scene" width="1080" height="1080" role="img" aria-label="Isometric animation explaining Kairos: sparse pedestrian observations become a map-grounded forecast of presence and directional flow."></canvas>
+    <div class="controls"><button id="play">Play</button><label id="seek">Animation <input id="timeline" type="range" min="0" max="46" step="0.05" value="0" aria-label="Animation time"><output id="elapsed">0.0 s</output></label><button id="reset">Reset view</button></div>
+    <div class="controls"><label>Forecast time <input id="hour" type="range" min="9" max="18" step="0.083333" value="9" aria-label="Forecast hour"><output id="hourLabel">09:00</output></label><button id="auto">Reset Time</button><button id="left" aria-label="Rotate camera left">↶ Rotate</button><button id="right" aria-label="Rotate camera right">Rotate ↷</button></div>
+    <p>Drag the scene to orbit. Scroll to zoom. Changing forecast time pauses the story in the forecast scene.</p>
   </section>
 
   <h2>Abstract</h2>
@@ -82,12 +81,13 @@ footer a{color:var(--ink)}
   </p>
 
   <h2 id="bibtex">BibTeX</h2>
-<pre><code>@article{catalano2026kairos,
-  title={Kairos: Grounded Forecasting of Presence and Directional Flow in 4D Scene Graphs},
-  author={Catalano, Iacopo and Placed, Julio A and Civera, Javier and Pe{\~n}a-Queralta, Jorge},
-  journal={arXiv preprint arXiv:2609.27467},
-  year={2026}
-}</code></pre>
+  <pre><code>@article{catalano2026kairos,
+    title={Kairos: Grounded Forecasting of Presence and Directional Flow in 4D Scene Graphs},
+    author={Catalano, Iacopo and Placed, Julio A and Civera, Javier and Pe{\~n}a-Queralta, Jorge},
+    journal={arXiv preprint arXiv:2609.27467},
+    year={2026}
+  }
+  </code></pre>
 
   <footer>Contact: <a href="mailto:imcata@utu.fi">imcata@utu.fi</a></footer>
 </main>
