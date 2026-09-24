@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kairos: Grounded Forecasting of Presence and Directional Flow in 4D Scene Graphs</title>
+<meta name="description" content="Kairos extends a 3D scene graph to a 4D scene graph that forecasts whether people will be present and how they will move, at any future time.">
+<meta property="og:title" content="Kairos: Grounded Forecasting of Presence and Directional Flow in 4D Scene Graphs">
+<meta property="og:description" content="A predictive directional-flow memory that extends a 3D scene graph to a 4D scene graph.">
+<meta property="og:type" content="website">
+<meta property="og:video" content="static/kairos-animation.webm">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#222;--muted:#555;--line:#ccc;--card:#f5f5f5;--bg:#fff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Sans 3",Arial,sans-serif;line-height:1.6}
+main{max-width:920px;margin:0 auto;padding:40px 16px 64px}
+h1{font-size:clamp(1.6rem,3.6vw,2.4rem);line-height:1.2;text-align:center;margin:0 0 20px;font-weight:700}
+.authors{text-align:center;font-size:1.1rem;margin:0}
+.authors a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--line)}
+.authors a:hover{border-color:var(--ink)}
+.affil{text-align:center;color:var(--muted);font-size:.95rem;margin:8px 0 0}
+.links{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin:24px 0 32px}
+.links a{display:inline-flex;align-items:center;gap:6px;background:#363636;color:#fff;text-decoration:none;padding:9px 18px;border-radius:999px;font-weight:600;font-size:.95rem}
+.links a:hover{background:#000}
+#kairos-animation{margin:0 0 36px}
+#kairos-animation canvas{display:block;width:100%;height:auto;touch-action:none;border-radius:10px;background:var(--card)}
+#kairos-animation .controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 0 0}
+#kairos-animation button{font:inherit;font-size:.95rem;background:#fff;color:var(--ink);border:1px solid var(--line);padding:8px 14px;border-radius:6px;min-height:40px;cursor:pointer}
+#kairos-animation button:hover{border-color:var(--ink)}
+#kairos-animation button:focus-visible,#kairos-animation input:focus-visible{outline:2px solid var(--ink)}
+#kairos-animation label{display:flex;align-items:center;gap:8px;font-size:.95rem}
+#kairos-animation input[type=range]{accent-color:#333;min-width:100px;max-width:100%}
+#kairos-animation #seek{flex:1}
+#kairos-animation p{font-size:.9rem;color:var(--muted);margin:10px 0}
+#kairos-animation details{font-size:.9rem;color:var(--muted)}
+#kairos-animation summary{cursor:pointer}
+#kairos-animation a{color:var(--ink)}
+@media(max-width:480px){#kairos-animation .controls{gap:8px}#kairos-animation label{flex-wrap:wrap}}
+h2{font-size:1.5rem;margin:40px 0 12px;text-align:center}
+.abstract{text-align:justify;hyphens:auto}
+pre{background:var(--card);border-radius:10px;padding:16px;overflow-x:auto;font-size:.85rem;line-height:1.45}
+footer{text-align:center;color:var(--muted);font-size:.85rem;margin-top:48px}
+footer a{color:var(--ink)}
+</style>
+</head>
+<body>
+<main>
+  <h1><span class="name">Kairos</span>: Grounded Forecasting of Presence and Directional Flow in 4D Scene Graphs</h1>
+
+  <p class="authors">
+    <a href="https://scholar.google.com/citations?hl=en&amp;user=VnPwRvkAAAAJ&amp;view_op=list_works&amp;sortby=pubdate">Iacopo Catalano</a><sup>1</sup>,
+    <a href="https://scholar.google.com/citations?hl=en&amp;user=1ho6W5EAAAAJ&amp;view_op=list_works&amp;sortby=pubdate">Julio A. Placed</a><sup>2,3</sup>,
+    <a href="https://scholar.google.com/citations?hl=en&amp;user=j_sMzokAAAAJ&amp;view_op=list_works&amp;sortby=pubdate">Javier Civera</a><sup>3</sup>,
+    <a href="https://scholar.google.com/citations?hl=en&amp;user=J1SHJeMAAAAJ&amp;view_op=list_works&amp;sortby=pubdate">Jorge Peña-Queralta</a><sup>4</sup>
+  </p>
+  <p class="affil">
+    <sup>1</sup>University of Turku &nbsp;·&nbsp;
+    <sup>2</sup>Instituto Tecnológico de Aragón (ITA) &nbsp;·&nbsp;
+    <sup>3</sup>University of Zaragoza &nbsp;·&nbsp;
+    <sup>4</sup>Centre for Artificial Intelligence, Zürich University of Applied Sciences
+  </p>
+
+  <nav class="links">
+    <a href="https://arxiv.org/abs/2609.27467">Paper</a>
+    <a href="https://github.com/IacopomC/kairos">Code</a>
+    <a href="#bibtex">BibTeX</a>
+  </nav>
+
+  <section id="kairos-animation">
+<canvas id="scene" width="1080" height="1080" role="img" aria-label="Isometric animation explaining Kairos: sparse pedestrian observations become a map-grounded forecast of presence and directional flow."></canvas>
+<div class="controls"><button id="play">Play</button><label id="seek">Animation <input id="timeline" type="range" min="0" max="46" step="0.05" value="0" aria-label="Animation time"><output id="elapsed">0.0 s</output></label><button id="reset">Reset view</button></div>
+<div class="controls"><label>Forecast time <input id="hour" type="range" min="9" max="18" step="0.083333" value="9" aria-label="Forecast hour"><output id="hourLabel">09:00</output></label><button id="auto">Follow story</button><button id="left" aria-label="Rotate camera left">↶ Rotate</button><button id="right" aria-label="Rotate camera right">Rotate ↷</button></div>
+<p>Drag the scene to orbit. Scroll to zoom. Changing forecast time pauses the story in the forecast scene.</p>
+<details><summary>About this animation</summary><p>A conceptual illustration of <em>Kairos: Grounded Forecasting of Presence and Directional Flow in 4D Scene Graphs</em>, by Iacopo Catalano, Julio A. Placed, Javier Civera, and Jorge Peña-Queralta. Kairos stores presence and directional-flow estimates at observed map voxels, forecasts recurrent dynamics, and aggregates those estimates onto navigational nodes. Adjacent nodes of the same motion class form an archetype.</p><p>Colors follow the paper’s hierarchy: green = unimodal (one dominant component), blue = bimodal (two), yellow = diffuse (occupied, no dominant component). The paper also defines static and intersection/multimodal classes; these are omitted from this simplified example. Each navigational node aggregates a local group of smaller flow cells arranged in parallel rows, weighted by their occupancy. All eight heading slots exist; the glyphs emphasize dominant components and show eight equal spokes in diffuse cells. Arrow size illustrates component weight, not speed. A few branch cells shift weight between fixed cardinal and diagonal headings as the query time changes. Colored patches illustrate occupancy separately. The classification threshold and distributions here are illustrative, not fitted Kairos parameters.</p><p>The environment, observations, day sequence, and forecasts are schematic. The vertically separated geometry and flow layers show attributes anchored to the same map; they are not separate physical maps. Robot motion is scripted, not an evaluated avoidance planner.</p></details>
+  </section>
+
+  <h2>Abstract</h2>
+  <p class="abstract">
+    Long-term autonomy in human-populated environments requires anticipating whether and how people will move at times a robot has not yet observed. Existing representations of pedestrian motion face a tradeoff: they either forecast future activity, reducing each location to a scalar rate, or model the full directional distribution, holding it fixed in time. We present Kairos, a predictive directional-flow memory that extends a hierarchical 3D scene graph (3DSG) to a 4D scene graph (4DSG). Every observed voxel of the reconstructed geometry stores a directional mixture and a presence rate, and spectral predictors forecast, for any future query time, both the probability that people are present and the full directional distribution of their motion. Pairwise flow dependence between adjacent voxels supports conditional queries, and per-voxel predictive variances yield calibrated credible intervals that tighten as observations accumulate. We evaluate Kairos on three real pedestrian environments: a robot-collected campus dataset, a shopping mall, and a station concourse recorded continuously for eleven months. Its learned state remains consistent under loop-closure corrections, and its forecasts are competitive with dedicated occupancy and flow models trained on the full detection stream, although Kairos learns from only the small fraction available to a patrolling robot. Finally, we validate the representation on a downstream encounter-probability planning task, where plans computed over the Kairos forecasts encounter more people than plans computed over any time-invariant map at an equal success rate.
+  </p>
+
+  <h2 id="bibtex">BibTeX</h2>
+<pre><code>@article{catalano2026kairos,
+  title={Kairos: Grounded Forecasting of Presence and Directional Flow in 4D Scene Graphs},
+  author={Catalano, Iacopo and Placed, Julio A and Civera, Javier and Pe{\~n}a-Queralta, Jorge},
+  journal={arXiv preprint arXiv:2609.27467},
+  year={2026}
+}</code></pre>
+
+  <footer>Contact: <a href="mailto:imcata@utu.fi">imcata@utu.fi</a></footer>
+</main>
+<script>function createKairosMotion(){
+ const dt=1/120,speed=1.0,margin=.74;
+ const horizontal=t=>Array.from({length:8},(_,i)=>{const dir=i<4?1:-1,j=i%4;return {x:((j*4+dir*t*.72+1600)%16)-8,y:dir===1?-1.08:1.08,yaw:dir===1?0:Math.PI,kind:'through',alpha:1};});
+ const tracks=[];
+ function at(track,t){if(t<track.start||t>track.end)return null;const u=(t-track.start)/(track.end-track.start);return {x:track.a[0]+(track.b[0]-track.a[0])*u,y:track.a[1]+(track.b[1]-track.a[1])*u,yaw:Math.atan2(track.b[1]-track.a[1],track.b[0]-track.a[0]),kind:track.kind,alpha:Math.min(1,u*10,(1-u)*10)};}
+ const people=t=>horizontal(t).concat(tracks.map(track=>at(track,t)).filter(Boolean));
+ function schedule(wanted,a,b,kind){const duration=Math.hypot(b[0]-a[0],b[1]-a[1])/.8;
+  for(let delay=0;delay<12;delay+=.15){const track={a,b,start:wanted+delay,end:wanted+delay+duration,kind};let clear=true;
+   for(let t=track.start;t<=track.end;t+=.04){const p=at(track,t);for(const q of people(t))if(Math.hypot(p.x-q.x,p.y-q.y)<.47){clear=false;break;}if(!clear)break;}
+   if(clear){tracks.push(track);return;}
+  }
+ }
+ for(let t=0;t<360;t+=32){
+  schedule(t,[-.92,-5.8],[-.92,5.8],'cross');schedule(t+9,[.92,5.8],[.92,-5.8],'cross');
+  for(let i=0;i<3;i++)schedule(t+7+i*1.5,[4.8,-.8],[4.8,-4.0],'enter');
+  for(let i=0;i<3;i++)schedule(t+21+i*1.5,[4.8,-4.0],[4.8,-.8],'exit');
+ }
+ const route=[[-6,0],[-4.8,0],[-4.8,-3.4],[-4.8,0],[0,0],[4.8,0],[4.8,3.4],[4.8,0],[0,0],[-6,0]];
+ let time=0,pos=route[0].slice(),yaw=0;const segments=[];let waits=0;
+ const delta=(a,b)=>Math.atan2(Math.sin(b-a),Math.cos(b-a));
+ function add(duration,to,newYaw,kind){segments.push({start:time,end:time+duration,a:pos.slice(),b:to.slice(),yaw,nextYaw:newYaw,kind});time+=duration;pos=to.slice();yaw=newYaw;}
+ for(let cycle=0;cycle<4;cycle++)for(let j=1;j<route.length;j++){
+  const target=route[j],d=Math.hypot(target[0]-pos[0],target[1]-pos[1]),angle=Math.atan2(target[1]-pos[1],target[0]-pos[0]),turn=delta(yaw,angle);
+  if(Math.abs(turn)>.01)add(Math.abs(turn)/1.8,pos,yaw+turn,'turn');
+  const duration=d/speed;
+  function clear(start){for(let s=0;s<=duration+dt;s+=dt){const u=Math.min(s/duration,1),x=pos[0]+(target[0]-pos[0])*u,y=pos[1]+(target[1]-pos[1])*u;for(const p of people(start+s))if(Math.hypot(x-p.x,y-p.y)<margin)return false;}return true;}
+  let wait=0;while(!clear(time+wait)){wait+=.1;if(wait>90)throw Error('No safe crossing');}
+  if(wait>0){add(wait,pos,yaw,'yield');waits++;}add(duration,target,yaw,'move');
+ }
+ function sample(t){const s=segments.find(s=>t<=s.end)||segments.at(-1),u=Math.max(0,Math.min(1,(t-s.start)/(s.end-s.start)));return {x:s.a[0]+(s.b[0]-s.a[0])*u,y:s.a[1]+(s.b[1]-s.a[1])*u,yaw:s.yaw+(s.nextYaw-s.yaw)*u,kind:s.kind};}
+ const simTime=t=>Math.min(t,12)*2+Math.max(0,Math.min(t,30)-12)*4;
+ return {people,sample,simTime,segments,waits,tracks};
+}
+
+
+/* Kairos — illustrative visual explanation, not model output. */
+function createKairos(canvas){
+ const c=canvas.getContext('2d'),W=1080,H=1080;
+ const C={bg:'#f6f8f8',ink:'#183b46',muted:'#55717a',teal:'#168b8b',green:'#168b8b',blue:'#547aca',amber:'#d89846',floor:'#e4ebeb',wall:'#d4dfe1'};
+ const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),sm=v=>{v=clamp(v);return v*v*(3-2*v)},lerp=(a,b,t)=>a+(b-a)*t;
+ let az=.68,el=.61,scale=68,centerY=620,queue=[];
+ function project(p){let x=p[0]*Math.cos(az)-p[1]*Math.sin(az),y=p[0]*Math.sin(az)+p[1]*Math.cos(az);return [540+x*scale,centerY+y*scale*Math.sin(el)-p[2]*scale*Math.cos(el),y*Math.cos(el)+p[2]*Math.sin(el)]}
+ function poly(points,color,alpha=1,line=null){queue.push({points,color,alpha,line,d:points.reduce((s,p)=>s+project(p)[2],0)/points.length});}
+ function box(x,y,z,w,d,h,color,alpha=1){
+  const p=[[x-w/2,y-d/2,z],[x+w/2,y-d/2,z],[x+w/2,y+d/2,z],[x-w/2,y+d/2,z]],q=p.map(v=>[v[0],v[1],z+h]);
+  function shade(hex,f){return '#'+hex.slice(1).match(/../g).map(v=>Math.min(255,Math.round(parseInt(v,16)*f)).toString(16).padStart(2,'0')).join('')}
+  poly([p[0],p[1],q[1],q[0]],shade(color,.86),alpha);poly([p[1],p[2],q[2],q[1]],shade(color,.78),alpha);poly([p[2],p[3],q[3],q[2]],shade(color,.92),alpha);poly([p[3],p[0],q[0],q[3]],shade(color,.95),alpha);poly(q,color,alpha);
+ }
+ function circle(x,y,z,r,color,alpha=1){poly(Array.from({length:24},(_,i)=>[x+Math.cos(i*Math.PI/12)*r,y+Math.sin(i*Math.PI/12)*r,z]),color,alpha)}
+ function line(a,b,color,width=1,alpha=1,dash=false){queue.push({a,b,color,width,alpha,dash,d:(project(a)[2]+project(b)[2])/2});}
+ function arrow(x,y,z,angle,len,color,alpha=1,width=.06){const cs=Math.cos(angle),sn=Math.sin(angle),head=Math.min(.18,len*.38),pts=[[-len/2,-width], [len/2-head,-width],[len/2-head,-width*2.7],[len/2,0],[len/2-head,width*2.7],[len/2-head,width],[-len/2,width]];poly(pts.map(([a,b])=>[x+a*cs-b*sn,y+a*sn+b*cs,z]),color,alpha)}
+ function text(s,x,y,size=24,color=C.ink,weight=400,align='left'){c.fillStyle=color;c.font=`${weight} ${size}px Arial, sans-serif`;c.textAlign=align;c.fillText(s,x,y)}
+ function tag(s,x,y,color=C.ink){c.font='500 17px Arial, sans-serif';const w=c.measureText(s).width+22;c.fillStyle='#ffffffed';c.beginPath();c.roundRect(x-w/2,y-21,w,30,6);c.fill();text(s,x,y,17,color,500,'center')}
+ function person(x,y,phase,alpha=1){circle(x,y,.035,.17,'#26404a',alpha*.1);box(x-.07,y,.05,.085,.10,.22+Math.sin(phase)*.03,'#647984',alpha);box(x+.07,y,.05,.085,.10,.22-Math.sin(phase)*.03,'#647984',alpha);box(x,y,.28,.23,.15,.31,'#9caeb6',alpha);box(x,y,.61,.16,.15,.16,'#d6ba9b',alpha)}
+ function robot(x,y){circle(x,y,.04,.31,C.ink,.14);box(x,y,.10,.46,.40,.22,'#e9f1f0');box(x,y,.33,.29,.27,.34,C.teal);box(x,y,.68,.36,.30,.14,'#ecf3f2');box(x,y+.16,.69,.23,.018,.075,'#244c59');for(const xx of [-.23,.23])box(x+xx,y,.055,.06,.30,.16,'#425b65')}
+ function sphere(x,y,z,r,color,alpha=1){queue.push({sphere:[x,y,z],r,color,alpha,d:project([x,y,z])[2]});}
+ function flush(){queue.sort((a,b)=>a.d-b.d);for(const q of queue){c.globalAlpha=q.alpha;if(q.sphere){const p=project(q.sphere),r=q.r*scale,g=c.createRadialGradient(p[0]-r*.3,p[1]-r*.35,r*.1,p[0],p[1],r);g.addColorStop(0,q.color);g.addColorStop(1,q.color);c.fillStyle=g;c.beginPath();c.arc(p[0],p[1],r,0,Math.PI*2);c.fill();c.fillStyle='#ffffff';c.globalAlpha=q.alpha*.32;c.beginPath();c.arc(p[0]-r*.25,p[1]-r*.3,r*.3,0,Math.PI*2);c.fill();}else if(q.points){c.beginPath();q.points.forEach((p,i)=>{const a=project(p);i?c.lineTo(a[0],a[1]):c.moveTo(a[0],a[1])});c.closePath();c.fillStyle=q.color;c.fill();if(q.line){c.strokeStyle=q.line;c.lineWidth=.65;c.stroke()}}else{const a=project(q.a),b=project(q.b);c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.strokeStyle=q.color;c.lineWidth=q.width;c.setLineDash(q.dash?[4,5]:[]);c.stroke();c.setLineDash([])}}c.globalAlpha=1}
+ const motion=createKairosMotion();
+ // Restore the original physical floor tiles by setting this to true.
+ const SHOW_FLOOR_TILES=false;
+ // Illustrative eight-slot distributions; tau is a visual choice, not a paper parameter.
+ const DOMINANT_THRESHOLD=.2;
+ const nodes=[],edges=[];
+ for(let x=-6;x<=6;x+=1.5){nodes.push([x,0]);if(nodes.length>1)edges.push([nodes.length-2,nodes.length-1]);}
+ for(const x of [-4.5,0,4.5])for(const sign of [-1,1]){
+  let prev=nodes.findIndex(p=>p[0]===x&&p[1]===0);
+  for(const y of [1.65,3.3]){const i=nodes.push([x,sign*y])-1;edges.push([prev,i]);prev=i;}
+ }
+ // Parallel rows across each corridor; owner controls both aggregation and links.
+ // Change FLOW_ROWS from 3 to 5 for a denser main corridor. Door branches stay
+ // at three rows to fit the openings. Crossing overlaps are removed automatically.
+ const FLOW_ROWS=3;
+ const FLOW_ROW_SPACING=.49;
+ const cells=[];
+ nodes.forEach(([x,y],owner)=>{
+  const rows=y===0?FLOW_ROWS:Math.min(FLOW_ROWS,3);
+  for(let row=0;row<rows;row++)for(const along of [-.49,0,.49]){
+   const across=(row-(rows-1)/2)*FLOW_ROW_SPACING;
+   const cell={x:x+(y===0?along:across),y:y+(y===0?across:along),owner};
+   if(cells.some(other=>Math.abs(other.x-cell.x)<.46&&Math.abs(other.y-cell.y)<.46))continue;
+   cells.push(cell);
+  }
+ });
+ function classify(weights,occupancy){
+  const dominant=weights.filter(w=>w>=DOMINANT_THRESHOLD).length;
+  const kind=dominant===0?'Diffuse':dominant===1?'Unimodal':dominant===2?'Bimodal':'Multimodal';
+  return {weights,dominant,kind,color:{Diffuse:C.amber,Unimodal:C.green,Bimodal:C.blue,Multimodal:'#cf6055'}[kind],occupancy};
+ }
+ function flowState(cell,hour){
+  const [x,y]=nodes[cell.owner],weights=Array(8).fill(.025),phase=(hour-9)/9;
+  if(x===0&&Math.abs(y)<2)weights.fill(1/8);
+  else if(y===0){weights[0]=.425+.19*Math.cos(phase*Math.PI);weights[4]=.85-weights[0];}
+  else{
+   // Keep the paper's fixed eight slots; change their weights, not their angles.
+   // Selected doorway branches turn diagonally, then reverse later in the day.
+   const slots=x===0?[2,2,6,6]:x<0?[2,1,5,6]:[2,3,7,6];
+   const segment=Math.min(2,Math.floor(phase*3)),u=sm(phase*3-segment);
+   weights[slots[segment]]+=.8*(1-u);weights[slots[segment+1]]+=.8*u;
+  }
+  return classify(weights,.35+.5*(.5+.5*Math.cos(phase*2*Math.PI+cell.x*.25+cell.y*.3)));
+ }
+ function aggregateCells(cellStates){
+  return nodes.map((_,owner)=>{
+   const support=cells.map((cell,i)=>cell.owner===owner?i:-1).filter(i=>i>=0);
+   const occupancy=support.reduce((sum,i)=>sum+cellStates[i].occupancy,0);
+   const weights=Array.from({length:8},(_,k)=>support.reduce((sum,i)=>sum+cellStates[i].occupancy*cellStates[i].weights[k],0)/occupancy);
+   return classify(weights,occupancy);
+  });
+ }
+ function archetypeGroups(states){
+  const seen=new Set(),groups=[];
+  nodes.forEach((_,start)=>{if(seen.has(start))return;const members=[],todo=[start];seen.add(start);
+   while(todo.length){const i=todo.pop();members.push(i);for(const [a,b] of edges){const j=a===i?b:b===i?a:-1;if(j>=0&&!seen.has(j)&&states[j].kind===states[start].kind){seen.add(j);todo.push(j);}}}
+   groups.push({members,color:states[start].color,kind:states[start].kind,x:members.reduce((v,i)=>v+nodes[i][0],0)/members.length,y:members.reduce((v,i)=>v+nodes[i][1],0)/members.length});
+  });return groups;
+ }
+ const stages=[
+  ['KAIROS','Grounded forecasting of presence and directional flow in 4D scene graphs.'],
+  ['Geometry-grounded motion representation','Presence and directional flow are estimated from sparse observations.'],
+  ['Online estimation of recurrent dynamics','Repeated observations characterize temporal variations in pedestrian flow.'],
+  ['Time-conditioned prediction','Presence and directional distributions are predicted at future query times.'],
+  ['KAIROS','Grounded forecasting of presence and directional flow in 4D scene graphs.']];
+ function draw(t,options={}){
+  if(canvas.width!==W)canvas.width=W;if(canvas.height!==H)canvas.height=H;queue=[];az=options.az??(.61+.08*sm((t-39)/5));el=options.el??.58;scale=40*(options.zoom||1);centerY=780;
+  const stage=t<7?0:t<18?1:t<30?2:t<39?3:4,visit=t<18?1:t<24?2:t<30?3:4;
+  const hour=options.hour??(9+9*clamp(t<18?t/18:t<24?(t-18)/6:t<30?(t-24)/6:(t-30)/9));
+  const st=motion.simTime(t),pose=motion.sample(st),rx=pose.x,ry=pose.y;
+  const learn=sm((t-13)/12),forecast=sm((t-29.5)/1),fadePeople=1-sm((t-30)/1.5);
+  const lift=sm((t-12)/4),fZ=5.1,nZ=7.0,groupZ=9.3,rootZ=11.7;
+  const reveal=(x,y)=>sm((t-(x+7.5)*.6-Math.abs(y)*.5)/2.5);
+  c.fillStyle=C.bg;c.fillRect(0,0,W,H);
+//   text('KAIROS  /  RESEARCH PREPRINT',64,55,17,C.teal,700);text(`${stage+1} / 5`,1016,55,17,C.muted,400,'right');
+  text(stages[stage][0],64,117,stage===4?36:42,C.ink,700);text(stages[stage][1],64,173,24,C.muted);
+  // Ground level: six rooms and broad central corridor, 14.4 x 10.4 model units.
+  if(!SHOW_FLOOR_TILES)box(0,0,-.13,14.4,10.4,.13,C.floor);
+  if(SHOW_FLOOR_TILES)for(let x=-7.2;x<7.1;x+=.6)for(let y=-5.2;y<5.1;y+=.6){const a=1;if(a>.001)box(x+.29,y+.29,-.13,.58,.58,.13,Math.abs(y+.29)<2?'#e3ecec':'#edf1ef',a);}
+  queue.forEach((q,i)=>q.d=-100000+i*.001);
+  function wall(x,y,w,d){box(x,y,0,w,d,.82,'#d4dfe0',1);}
+  for(let x=-6.9;x<7.1;x+=.6){if(Math.abs(x)>2.4){wall(x,-5.2,.59,.14);wall(x,5.2,.59,.14);}}
+  for(let y=-4.9;y<5.1;y+=.6){if(Math.abs(y)>2)for(const x of [-7.2,-2.4,2.4,7.2])wall(x,y,.14,.59);}
+  for(const y of [-2,2])for(let x=-6.95;x<7.1;x+=.3){if(Math.abs(x)>2.4&&[-4.8,4.8].every(door=>Math.abs(x-door)>.8))wall(x,y,.29,.14);}
+  for(const x of [-4.8,4.8])for(const sign of [-1,1]){const a=1;box(x,sign*4.65,.12,1.7,.44,.26,'#b1c5c7',a);box(x,sign*4.86,.37,1.7,.12,.28,'#cad9d9',a);}
+  // Ground agents: opposing, spatially separated lanes. The motion scheduler reserves crossings.
+  if(t<30){circle(rx,ry,.03,1.15,C.teal,.07);for(let a=0;a<6.28;a+=.18)line([rx+1.15*Math.cos(a),ry+1.15*Math.sin(a),.04],[rx+1.15*Math.cos(a+.08),ry+1.15*Math.sin(a+.08),.04],C.teal,1,.35);}
+  for(const p of motion.people(st)){if(Math.abs(p.x)>7.35)continue;const a=fadePeople*p.alpha*clamp((7.35-Math.abs(p.x))/.45)*clamp((5.65-Math.abs(p.y))/.4);person(p.x,p.y,st*5,a);}
+  const first=queue.length;robot(rx,ry);const rot=pose.yaw-Math.PI/2,cs=Math.cos(rot),sn=Math.sin(rot);
+  for(const q of queue.slice(first)){const tr=p=>{const x=p[0]-rx,y=p[1]-ry;return [rx+x*cs-y*sn,ry+x*sn+y*cs,p[2]];};if(q.points){q.points=q.points.map(tr);q.d=q.points.reduce((a,p)=>a+project(p)[2],0)/q.points.length;}}
+  arrow(rx+Math.cos(pose.yaw)*.55,ry+Math.sin(pose.yaw)*.55,.045,pose.yaw,.38,C.teal,.8,.045);
+  // Reconstructed 2D floor plan above the actual physical environment.
+  const mapZ=2.6,mapA=sm((t-2)/3);
+  for(let x=-7.2;x<7.1;x+=.6)for(let y=-5.2;y<5.1;y+=.6){const a=reveal(x,y)*mapA;if(a>.001)poly([[x,y,mapZ],[x+.6,y,mapZ],[x+.6,y+.6,mapZ],[x,y+.6,mapZ]],'#dce9ed',a*.5);}
+  const planLine=(x1,y1,x2,y2)=>line([x1,y1,mapZ+.02],[x2,y2,mapZ+.02],'#476e80',1.5,mapA*Math.min(reveal(x1,y1),reveal(x2,y2))*.75);
+  for(const sign of [-1,1]){for(const range of [[-7.2,-2.4],[2.4,7.2]])planLine(range[0],sign*5.2,range[1],sign*5.2);for(const x of [-7.2,-2.4,2.4,7.2])planLine(x,sign*2,x,sign*5.2);for(const pair of [[-7.2,-5.6],[-4,-2.4],[2.4,4],[5.6,7.2]])planLine(pair[0],sign*2,pair[1],sign*2);}
+  for(const x of [-6,6])line([x,3.5,.05],[x,3.5,mapZ],'#91a9b1',.8,mapA*.3,true);
+  // Explicit separate dynamics deck. Only corridor lanes and door branches carry flow.
+  if(lift>.001){
+   poly([[-7,-1.8,fZ],[7,-1.8,fZ],[7,1.8,fZ],[-7,1.8,fZ]],'#c8e0e7',lift*.22,'#9dbec8');
+   for(const x of [-6,0,6])line([x,1.8,2.6],[x,1.8,fZ],'#7ca7b1',1,lift*.5,true);
+   poly([[-1.5,-5.1,fZ],[1.5,-5.1,fZ],[1.5,5.1,fZ],[-1.5,5.1,fZ]],'#c8e0e7',lift*.16,'#9dbec8');
+  }
+  const cellStates=cells.map(cell=>flowState(cell,hour));
+  const states=aggregateCells(cellStates);
+  const groups=archetypeGroups(states).map(g=>({...g,p:[g.x,g.y,groupZ]}));
+  const a=nodes.map(([x,y])=>reveal(x,y)*sm((t-5-(x+7)*.25)/2));
+  const navZ=.1+(nZ-.1)*sm((t-6)/7),groupA=sm((t-21)/4),rootA=sm((t-10)/3),root=[0,0,rootZ];
+  for(const [i,j]of edges)line([...nodes[i],navZ],[...nodes[j],navZ],C.ink,1.6,Math.min(a[i],a[j])*.55);
+  if(lift>.001)cells.forEach((cell,index)=>{
+   const {x,y,owner}=cell,state=cellStates[index],half=.23;
+   poly([[x-half,y-half,fZ],[x+half,y-half,fZ],[x+half,y+half,fZ],[x-half,y+half,fZ]],state.color,learn*(.12+state.occupancy*.36));
+   state.weights.forEach((w,k)=>{
+    const diffuse=state.kind==='Diffuse';
+    if(!diffuse&&w<.07)return;
+    const angle=k*Math.PI/4,len=diffuse?.16:.12+.26*w,r=diffuse?.13:len*.32;
+    arrow(x+Math.cos(angle)*r,y+Math.sin(angle)*r,fZ+.06,angle,len,state.color,learn*(diffuse?1:.45+.55*w),diffuse?.016:.015+.018*w);
+   });
+   line([x,y,fZ+.1],[...nodes[owner],navZ],states[owner].color,.7,a[owner]*lift*.22,true);
+  });
+  for(let i=0;i<nodes.length;i++){
+   const [x,y]=nodes[i],state=states[i],g=groups.find(g=>g.members.includes(i));
+   line([x,y,0],[x,y,navZ],'#91a9b1',.7,a[i]*.15,true);
+   sphere(x,y,navZ,.10,state.color,a[i]);
+   if(groupA<1)line([x,y,navZ],root,'#9baeb4',.8,a[i]*rootA*(1-groupA)*.26);
+   if(groupA>0)line([x,y,navZ],g.p,state.color,1,a[i]*groupA*.65);
+  }
+  for(const g of groups){line(g.p,root,'#8fabb4',1,groupA*.6);sphere(...g.p,.17,g.color,groupA);}
+  sphere(...root,.22,'#cf6055',rootA);
+  flush();
+  if(t>11){const p=project(root);tag('Environment',p[0],p[1]-20);}
+  if(t>25){const p=project([4.5,0,groupZ]);tag('Motion Archetypes',p[0]+50,p[1]-12);}
+  if(t>9){const p=project([-6,0,navZ]);tag('Navigational Nodes',p[0]-55,p[1]-15);}
+  if(t>16){const p=project([-6,1.8,fZ]);tag('Flow Memory',p[0]-32,p[1]+10);}
+  if(t>5){const p=project([-6,3.5,2.6]);tag('Geometric Substrate',p[0]-15,p[1]+12);}
+//   if(t<18){const p=project([4.8,3.4,0]);tag('Physical Environment',p[0]+45,p[1]+25);}
+  
+  if(t>16){
+   const legends=[['Unimodal',C.green],['Bimodal',C.blue],['Diffuse',C.amber]];
+   legends.forEach(([label,color],i)=>{const x=878,y=365+i*34;c.fillStyle=color;c.beginPath();c.arc(x,y,6,0,Math.PI*2);c.fill();text(label,x+18,y+6,18,C.ink);});
+  }
+  // The ribbon makes accelerated later visits explicit.
+  c.fillStyle='#ffffff';c.beginPath();c.roundRect(64,254,952,76,14);c.fill();text(visit<4?(t<12?'OBSERVING · 1×':'OBSERVING · 2×'):'FUTURE QUERY',85,282,14,C.muted,700);
+  const hh=Math.floor(hour),mm=Math.floor((hour-hh)*60/5)*5;text(`Day ${visit} · ${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`,85,313,24,C.ink,700);
+  for(let i=1;i<=4;i++){const x=490+(i-1)*145;c.fillStyle=i===visit?C.teal:'#dce6e6';c.beginPath();c.arc(x,291,7,0,Math.PI*2);c.fill();if(i<4){c.strokeStyle='#dce6e6';c.lineWidth=2;c.beginPath();c.moveTo(x+13,291);c.lineTo(x+132,291);c.stroke();}text(i===4?'Day 4 · forecast':`Day ${i}`,x,316,15,i===visit?C.ink:C.muted,400,'center');}
+  return {stage,hour,visit,robot:pose,states,groups,nodes,edges,cells,cellStates};
+ }
+ return {draw,duration:46};
+}
+if(typeof module!=='undefined')module.exports=createKairos;
+
+const canvas=document.getElementById('scene'),movie=createKairos(canvas),play=document.getElementById('play'),timeline=document.getElementById('timeline'),elapsed=document.getElementById('elapsed'),hour=document.getElementById('hour'),hourLabel=document.getElementById('hourLabel');
+let t=0,running=false,last=0,opts={},drag=null;
+function render(){const state=movie.draw(t,opts);timeline.value=t;elapsed.value=t.toFixed(1)+' s';hour.value=state.hour;const h=Math.floor(state.hour),m=Math.floor((state.hour-h)*60/5)*5;hourLabel.value=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');play.textContent=running?'Pause':'Play';}
+function stop(){running=false;play.textContent='Play'}
+play.onclick=()=>{if(t>=46)t=0;running=!running;last=performance.now();render()};
+timeline.oninput=()=>{stop();t=Number(timeline.value);delete opts.hour;render()};
+hour.oninput=()=>{stop();t=34;opts.hour=Number(hour.value);render()};
+document.getElementById('auto').onclick=()=>{delete opts.hour;render()};
+document.getElementById('reset').onclick=()=>{opts={};render()};
+document.getElementById('left').onclick=()=>{opts.az=(opts.az??.68)-.2;render()};document.getElementById('right').onclick=()=>{opts.az=(opts.az??.68)+.2;render()};
+canvas.onpointerdown=e=>{drag={x:e.clientX,y:e.clientY,az:opts.az??.68,el:opts.el??.61};canvas.setPointerCapture(e.pointerId)};
+canvas.onpointermove=e=>{if(!drag)return;opts.az=drag.az+(e.clientX-drag.x)*.006;opts.el=Math.max(.3,Math.min(1.2,drag.el+(e.clientY-drag.y)*.003));render()};
+canvas.onpointerup=canvas.onpointercancel=()=>drag=null;
+canvas.addEventListener('wheel',e=>{e.preventDefault();opts.zoom=Math.max(.65,Math.min(1.15,(opts.zoom||1)*Math.exp(-e.deltaY*.001)));render()},{passive:false});
+function frame(now){if(running){t=Math.min(46,t+Math.min((now-last)/1000,.1));if(t>=46)stop();render()}last=now;requestAnimationFrame(frame)}render();requestAnimationFrame(frame);
+</script>
+</body>
+</html>
