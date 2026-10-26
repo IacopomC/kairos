@@ -2,7 +2,7 @@
 
 [![Static Badge](https://img.shields.io/badge/-arXiv-B31B1B?logo=arxiv)](https://arxiv.org/abs/2609.27467)
 [![Project Page](https://img.shields.io/badge/Project-Page-147575)](https://iacopomc.github.io/kairos/)
-[![ROS Version](https://img.shields.io/badge/ROS-Noetic-blue.svg)](http://wiki.ros.org/noetic)
+[![ROS Version](https://img.shields.io/badge/ROS_2-Jazzy-blue.svg)](https://docs.ros.org/en/jazzy/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 This repository is the official implementation of the paper:
@@ -24,34 +24,28 @@ At any traversable location and any future time, Kairos answers two questions a 
 
 ## Prerequisites
 
-- **Docker**, or **Ubuntu 20.04** with **ROS Noetic** for a native build
+- **Docker**, or **Ubuntu 24.04** with **ROS 2 Jazzy** for a native build
 - A pedestrian detection source: a tracks CSV per scene for the Python
-  pipeline, or `odom_array_msgs/OdometryArray` messages for the ROS node
+  pipeline, or `odom_array_msgs/msg/OdometryArray` messages for the ROS node
 
 ## Installation
 
-Kairos was developed using Ubuntu 20.04 and ROS 1 Noetic. Docker is the recommended way to use it on any other system. Both start from the same workspace.
+Kairos runs on Ubuntu 24.04 and ROS 2 Jazzy. Docker is the recommended way to use it on any other system.
 
-### 1. Set up the workspace
+### Docker
+
+**Build the image.** The build fetches the other repositories of the workspace
+itself (`kairos.repos`), so this repository is all it needs:
 
 ```bash
-mkdir -p ~/kairos_ws/src && cd ~/kairos_ws/src
 git clone https://github.com/IacopomC/kairos.git
-vcs import . < kairos/install/kairos.rosinstall   # needs python3-vcstool
-```
-
-### 2a. Docker
-
-**Build the image.**
-
-```bash
-~/kairos_ws/src/kairos/docker/build_image.sh      # -> kairos:latest
+kairos/docker/build_image.sh      # -> kairos:latest
 ```
 
 **Run Kairos on a scene.**
 
 ```bash
-docker run --rm -v /path/to/datasets:/data -v /path/to/output:/out kairos \
+docker run --rm -v /path/to/datasets:/data -v /path/to/output:/out kairos:latest \
     kairos run /data/tbd/<month>/<scene> -c tbd -l ade20k_outdoor \
     --tracks /data/tbd/<month>/<scene>/tracks.csv \
     -o /out/run01 --no-publish
@@ -62,75 +56,61 @@ docker run --rm -v /path/to/datasets:/data -v /path/to/output:/out kairos \
 the run's config. `flow_state.bin` is the trained model: pass it to the next
 session with `--load-flow-state`, or evaluate it with `--score-tracks`.
 
-### 2b. Native (Ubuntu 20.04 + ROS Noetic)
+### Native (Ubuntu 24.04 + ROS 2 Jazzy)
 
-**System dependencies**: CMake 3.22 or newer, GTSAM 4.1 and pybind11 2.11 or newer:
+**Set up the workspace:**
 
 ```bash
-sudo apt install -y software-properties-common wget gnupg
-wget -qO - https://apt.kitware.com/keys/kitware-archive-latest.asc \
-    | gpg --dearmor - | sudo tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
-echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main' \
-    | sudo tee /etc/apt/sources.list.d/kitware.list
-sudo add-apt-repository -y ppa:borglab/gtsam-release-4.1
-sudo apt update && sudo apt install -y cmake python3-pip python3-catkin-tools \
-    python3-rosdep python3-vcstool python3-tk nlohmann-json3-dev libzmq3-dev \
-    libgtsam-dev libgtsam-unstable-dev
-pip3 install "pybind11>=2.11"
+mkdir -p ~/kairos_ws/src && cd ~/kairos_ws/src
+git clone https://github.com/IacopomC/kairos.git
+vcs import . < kairos/kairos.repos   # needs python3-vcstool
 ```
 
-**Serialize the GTSAM solve** in Kimera-RPGO (see the note below):
+**System dependencies:**
 
 ```bash
-cd ~/kairos_ws/src/Kimera-RPGO
-sed -i '1i #include <tbb/global_control.h>' src/RobustSolver.cpp
-sed -i 's|^\(void RobustSolver::optimize().*{\)|\1\n  tbb::global_control gc(tbb::global_control::max_allowed_parallelism, 1);|' src/RobustSolver.cpp
+sudo apt install -y python3-pip python3-colcon-common-extensions python3-rosdep \
+    python3-vcstool nlohmann-json3-dev libgoogle-glog-dev libcli11-dev libeigen3-dev
+cd ~/kairos_ws
+sudo rosdep init 2>/dev/null; rosdep update          # once per machine
+rosdep install --from-paths src --ignore-src -r -y
+```
+
+**Serialize the GTSAM solve** in Kimera-PGMO (see the note below):
+
+```bash
+python3 src/kairos/docker/serialize_gtsam_solve.py src
 ```
 
 **Build the C++**, from the workspace root:
 
 ```bash
-cd ~/kairos_ws
-source /opt/ros/noetic/setup.bash
-sudo rosdep init 2>/dev/null; rosdep update          # once per machine
-rosdep install --from-paths src --ignore-src -r -y
-catkin config --extend /opt/ros/noetic -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
-    -DCONFIG_UTILS_BUILD_DEMOS=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-catkin build hydra kairos
-source devel/setup.bash
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-up-to kairos kairos_ros \
+    --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCONFIG_UTILS_ENABLE_ROS=OFF
+source install/setup.bash
 ```
 
-**Install the Python dependencies:**
+**Install the Python packages**, which builds the Kairos Python bindings. numpy
+stays at the system version the ROS packages are built against:
 
 ```bash
-pip install ./src/spark-dsg-kairos
-pip install --no-deps imageio networkx scipy tqdm distinctipy click pyqtgraph "numpy==1.24.4"
-pip install --no-deps ./src/hydra-kairos
+pip install --break-system-packages "numpy==$(python3 -c 'import numpy; print(numpy.__version__)')" \
+    click distinctipy imageio networkx pandas pyqtgraph pyyaml rosbags scipy \
+    sortedcontainers tqdm
+pip install --break-system-packages --no-deps \
+    "spark_dataset_interfaces @ git+https://github.com/MIT-SPARK/spark_dataset_interfaces"
+pip install --break-system-packages --no-deps ./src/spark_dsg ./src/hydra ./src/kairos
 ```
 
-**Build the Kairos Python bindings:**
+**Run it.** In every new shell, source the workspace first:
 
 ```bash
-cmake -S src/kairos/python -B build/kairos_python -DHYDRA_FLOW_DIR=$PWD/src/hydra-kairos \
-      -DPYTHON_EXECUTABLE=$(which python3) -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-      -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-cmake --build build/kairos_python -j
-cp build/kairos_python/_kairos_bindings*.so src/kairos/python/src/kairos_python/
+source ~/kairos_ws/install/setup.bash
+kairos run --help
 ```
 
-**Run it.** In every new shell, source the workspace and put `kairos_python` on
-the Python path; `python3 -m kairos_python run` takes the same arguments as
-`kairos run` in the image:
-
-```bash
-source ~/kairos_ws/devel/setup.bash
-export PYTHONPATH=~/kairos_ws/src/kairos/python/src:$PYTHONPATH
-python3 -m kairos_python run --help
-```
-
-The ROS packages build in the same workspace: `catkin build hydra_ros kairos_ros`.
-
-> **GTSAM and TBB.** The packaged GTSAM runs its solve in parallel with TBB and crashes nondeterministically inside `OptimizeClique` when many loop closures accumulate. The patch above makes that solve single-threaded. Re-apply it after a fresh checkout of Kimera-RPGO.
+> **GTSAM and TBB.** The packaged GTSAM runs its solve in parallel with TBB and crashes nondeterministically inside `OptimizeClique` when many loop closures accumulate. `serialize_gtsam_solve.py` makes that solve single-threaded. Re-apply it after a fresh checkout of Kimera-PGMO; the Docker image applies it during the build.
 
 ## Running Kairos
 
@@ -147,7 +127,7 @@ kairos run <scene>... -c <config> -l <labelspace> -o <output-dir>
 | `--tracks` | pedestrian tracks CSV to feed the flow layer, when detections are not produced by the perception stack |
 | `--load-flow-state` | resume from a previously trained `flow_state.bin` instead of starting empty (in case of multi-sessions scenes) |
 | `--score-tracks` | evaluates a held-out tracks CSV at the end of the run |
-| `--enable-lcd/--no-enable-lcd` | loop-closure detection; needs `--bow-vocab` |
+| `--enable-lcd/--no-enable-lcd` | loop-closure detection; needs an ORB vocabulary (`scripts/fetch_orb_vocab.sh`, or `--bow-vocab`) |
 | `--publish/--no-publish` | publish over ZMQ; turn off for offline runs |
 
 `kairos run --help` lists the rest.
@@ -161,7 +141,7 @@ carries over.
 **Quick test** (200 frames, no evaluation):
 
 ```bash
-docker run --rm -v /path/to/datasets:/data -v /path/to/output:/out kairos \
+docker run --rm -v /path/to/datasets:/data -v /path/to/output:/out kairos:latest \
     kairos run /data/tbd/<month>/<scene> -c tbd -l ade20k_outdoor \
     -o /out/smoke -m 200 --no-publish
 ```
@@ -177,27 +157,29 @@ We use rerun.io for an interactive, time-scrubbable 3D recording of a run.
 **1. Produce a recording (`.npz`).** Set `KAIROS_VIZ_RECORDING=1` on a `kairos run`.
 
 **2. Render it to `.rrd`** with [`kairos_visualizer/`](kairos_visualizer/)
-(needs Python 3.9+):
+(needs Python 3.9+ and numpy 2), which the Kairos image carries in its own
+environment as `kairos-visualize`:
+
+```bash
+docker run --rm -v "$PWD":/out --entrypoint kairos-visualize kairos:latest \
+    /out/run.npz -o /out/run.rrd
+```
+
+In alternative, install the package:
 
 ```bash
 pip install ./kairos_visualizer
 python -m kairos_visualizer run.npz -o run.rrd
 ```
 
-In alternative, use the docker image:
+**3. View it.** The viewer alone needs the `rerun-sdk`, at the version that
+rendered the file (the Kairos image renders with 0.34.1):
 
 ```bash
-docker build -t kairos-viz kairos_visualizer
-docker run --rm -v "$PWD":/out kairos-viz /out/run.npz -o /out/run.rrd
+pip install "rerun-sdk==0.34.1" && rerun run.rrd
 ```
 
-**3. View it.** The viewer alone needs the `rerun-sdk`:
-
-```bash
-pip install rerun-sdk && rerun run.rrd
-```
-
-Without Python 3.9 (e.g. on Ubuntu 20.04), use the standalone viewer binary
+Without Python 3.9, use the standalone viewer binary
 shipped inside the Linux wheel on
 [PyPI](https://pypi.org/project/rerun-sdk/0.34.1/#files): download the
 `manylinux` `x86_64` `.whl`, unzip, and run the bundled binary.
@@ -217,6 +199,7 @@ Small `.rrd` files can also be dragged into app.rerun.io.
 | [`doc/pipeline_overview.md`](doc/pipeline_overview.md) | how the flow pipeline fits together, end to end |
 | [`doc/temporal_dynamics.md`](doc/temporal_dynamics.md) | the flow model: mixture, spectral forecasting, presence, coupling |
 | [`doc/params.md`](doc/params.md) | every configuration parameter |
+| [`doc/place_aggregation.md`](doc/place_aggregation.md) | how voxel flow is summarized onto place nodes |
 | [`doc/Concepts.md`](doc/Concepts.md) | vocabulary used across the code |
 | [`doc/timing.md`](doc/timing.md) | how the cost measurements are taken |
 

@@ -16,30 +16,29 @@
 #include <vector>
 
 #include <Eigen/Core>
+#include <hydra/reconstruction/volumetric_map.h>
 #include <spark_dsg/dynamic_scene_graph.h>
 
-#include "hydra/bindings/python_pipeline.h"
 #include "kairos/flow/flow_map.h"
 #include "kairos/temporal/flow_temporal_module.h"
 
 namespace kairos::python {
 
-class KairosPipeline : public hydra::python::PythonPipeline {
+/**
+ * @brief Python-facing handle on a running flow module.
+ *
+ * The flow module runs inside Hydra's pipeline (created from its `modules`
+ * config); the handle finds it by name on every call, so it stays valid across
+ * pipeline resets. Calls on a module that isn't running return empty results.
+ */
+class FlowHandle {
  public:
-  struct Config : hydra::python::PythonPipeline::Config {
-    bool enable_flow_temporal_module = false;
-    FlowTemporalModule::Config flow_temporal;
-  } const config;
+  explicit FlowHandle(const std::string& name = "flow_temporal");
 
-  KairosPipeline(const Config& config,
-                 const hydra::Sensor::Ptr& sensor,
-                 int robot_id = 0,
-                 int config_verbosity = 0,
-                 bool freeze_global_info = true,
-                 bool step_mode_only = true,
-                 std::string zmq_url = "");
+  //! The running module, or nullptr if none is registered under the name
+  FlowTemporalModule* module() const;
 
-  ~KairosPipeline() override;
+  const std::string name;
 
   bool pushDetections(double timestamp_s,
                       const std::vector<Eigen::Vector3d>& xyz_world,
@@ -111,21 +110,15 @@ class KairosPipeline : public hydra::python::PythonPipeline {
   FlowMap::StateStats flowStats() const;
   FlowMap::TimingStats flowTiming() const;
   FlowTemporalModule::ModuleTiming moduleTiming() const;
-  /// Active-window voxel-layer footprint (TSDF/semantic block counts + bytes),
-  /// for the bounded-memory analysis. Zeroed before the first map update.
+  /// Active-window voxel-layer footprint (TSDF/semantic block counts + bytes)
+  /// at the last map update, for the bounded-memory analysis. Zeroed before the
+  /// first map update.
   hydra::VolumetricMap::MemoryStats mapMemoryStats() const;
   std::vector<FlowMap::StabilityRecord> flowStability() const;
   std::vector<FlowTemporalModule::LcEvent> lcEvents() const;
   std::string couplingJson() const;
 
- protected:
-  void initExtraModules() override;
-  void startExtraWorkers() override;
-  void stopExtraWorkers() override;
-  void resetExtraModules() override;
-
-  std::shared_ptr<FlowTemporalModule> flow_temporal_;
-
+ private:
   // Caller-supplied navigational-node layer for the additive summary hook.
   // A private DSG (never the backend graph), so the frontend/backend path is
   // untouched. nav_node_ids_ maps injection index -> NodeId.
@@ -133,9 +126,7 @@ class KairosPipeline : public hydra::python::PythonPipeline {
   std::vector<spark_dsg::NodeId> nav_node_ids_;
 };
 
-void declare_config(KairosPipeline::Config& config);
-
-namespace kairos_pipeline {
+namespace flow_module {
 void addBindings(pybind11::module_& m);
 }
 

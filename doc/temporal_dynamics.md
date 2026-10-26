@@ -50,22 +50,22 @@ alignment with the place-place edge direction, plus bidirectionality)
 are written once per edge into the edge's own
 `EdgeAttributes::metadata` under a `flow` key, oriented along
 `edge.source -> edge.target`. See
-[`place_aggregation.md`](https://github.com/IacopomC/hydra-kairos/blob/main/doc/place_aggregation.md) in `hydra-kairos` for a conceptual walk-through of the partition
+[`place_aggregation.md`](place_aggregation.md) for a conceptual walk-through of the partition
 choice and what each summary field means.
 
 The visualizer reads exactly those fields. The arrow rendering is
-implemented in
-`kairos-ros/src/plugins/flow_place_arrow_plugin.cpp`
-and `scene_graph_renderer.cpp` (`makeFlowArrowMarkers`); both publish to
-`/hydra_dsg_visualizer/dsg_markers`, the same topic the static DSG uses.
+implemented in `kairos-ros/src/plugins/flow_place_arrow_plugin.cpp`, a
+plugin that Hydra-ROS's visualizer loads
+(`kairos-ros/config/visualizer_plugins.yaml`).
 
 ---
 
 ## 2. Architecture
 
-The dynamics module follows the same layering as the rest of hydra-kairos:
-the non-ROS core lives in `kairos/`, and a thin ROS adapter lives in
-`kairos-ros/`.
+The non-ROS core lives in `kairos/`, and a thin ROS adapter lives in
+`kairos-ros/`. Hydra itself has no knowledge of Kairos: `libkairos` registers
+its pieces with Hydra's config factories, and Hydra creates them from the
+dataset config.
 
 `kairos::FlowTemporalModule`
 (`kairos/include/kairos/temporal/flow_temporal_module.{h,cpp}`) is a `Module`
@@ -74,26 +74,43 @@ deformation-alignment logic, and the place-summary writer. Detection observation
 the convenience `pushDetections`, which takes world-frame xyz and
 performs the voxel-grid lookup internally). Map updates from the active
 window enter via `handleMapUpdate`, and backend updates via
-`handleBackendUpdate`.
+`handleBackendUpdate`. Hydra creates the module from the `modules` section of
+the dataset config, and two adapters
+(`kairos/src/temporal/flow_hydra_adapters.cpp`) connect it to the pipeline:
+`FlowMapSink`, listed in the active window's `sinks`, forwards each map update,
+and `FlowUpdateFunctor`, listed in the backend's `update_functors`, forwards
+each backend update. Both find the module by name, so the three are configured
+independently.
 
 `kairos::FlowTemporalRosBridge`
 (`kairos-ros/{include/kairos_ros,src}/flow_temporal_ros_bridge.{h,cpp}`)
 composes a `FlowTemporalModule` and adds the ROS surface: a subscriber on
 the configured `OdometryArray` topic, a `query_flow` service, marker and
-metrics publishers, and a TF lookup. Both `HydraRosPipeline` (live ROS)
-and `KairosPipeline` (offline) construct an instance of the module and
-register `handleMapUpdate` / `handleBackendUpdate` as sinks on the active
-window and backend respectively. The only difference between the two
-paths is the entry point for detections: `OdometryArray` callback in ROS,
+metrics publishers, and a TF lookup. On a live robot Hydra-ROS creates the
+bridge in place of the module (`type: FlowTemporalRosBridge` under
+`modules`); offline, Hydra's Python pipeline creates the module itself. The
+sink and functor are the same on both paths. The only difference is the entry
+point for detections: the `OdometryArray` callback in ROS,
 `pipeline.push_detections(...)` in Python.
 
 ---
 
 ## 3. Inputs
 
-The frame stream — RGB, depth, labels, poses — is the base pipeline's.
-Refer to [`non_ros_usage.md`](https://github.com/IacopomC/hydra-kairos/blob/main/doc/non_ros_usage.md) in `hydra-kairos` for the `FileDataLoader` contract
-and to [`data_generation.md`](https://github.com/IacopomC/hydra-kairos/blob/main/doc/data_generation.md) for converting raw datasets into that layout.
+The frame stream is a scene folder, read by `FileDataLoader`
+(`python/src/kairos_python/data_loader.py`):
+
+```
+<scene>/
+├── camera_info.yaml          width, height, fx, fy, cx, cy
+├── poses.csv                 header row, then t_ns,x,y,z,qw,qx,qy,qz per frame
+├── rgb_0000000.png           one image per poses.csv row, indexed from 0
+├── depth_0000000.tiff        depth in meters
+└── labels_0000000.png        uint16 label ids of the chosen label space
+```
+
+The poses are the camera's, in the world frame. `scripts/tbd_to_filedataloader.py`
+and `scripts/generate_labels.py` write this layout for TBD (§8).
 
 Detections are an additional per-frame stream. The on-disk format is a
 sorted CSV with one header row:
@@ -148,30 +165,30 @@ The relevant flags:
 - `--tracks-time-shift-ns N` adds a manual offset (nanoseconds) to every
   track timestamp, applied on top of `--auto-align-tracks`.
 
-The dataset YAML must set `enable_flow_temporal_module: true` for the
-flag to do anything. The runner prints the track span, the offset
+The dataset YAML must list the flow module under `modules` for the flag
+to do anything. The runner prints the track span, the offset
 between the first track and first frame, and a final tally of pushed
 samples on exit; a zero tally is the first thing to check when arrows
 fail to appear.
 
 On the live ROS path, `FlowTemporalRosBridge` subscribes to
-`/people_detections_odom` (`odom_array_msgs::OdometryArray`); the launch
-arguments live in
-`hydra-kairos-ros/hydra_ros/launch/pipeline_config.launch` under the
-`flow_temporal_*` prefix.
+`/people_detections_odom` (`odom_array_msgs/msg/OdometryArray`); the launch
+arguments live in `kairos-ros/launch/kairos.launch.yaml`.
 
 ---
 
 ## 5. Configuration
 
-The flow temporal module is configured via a `flow_temporal:` block at
-the top level of the dataset YAML, plus an `enable_flow_temporal_module:`
-toggle. `config/datasets/tbd.yaml` is the reference example; copy it as
-a starting point for new datasets.
+The flow temporal module is configured by a `flow_temporal:` entry under
+`modules` in the dataset YAML (`type: FlowTemporalModule`), together with
+`FlowMapSink` in `active_window.sinks` and `FlowUpdateFunctor` in
+`backend.update_functors`. `FlowUpdateFunctor` is listed first, so the
+functors after it (archetypes, rooms) see the place summaries it writes in
+the same update. `config/datasets/tbd.yaml` is the reference example; copy
+it as a starting point for new datasets.
 
-If `enable_flow_temporal_module` is missing or set to `false`, the
-module is not constructed and `pipeline.push_detections(...)` becomes a
-no-op returning `False`.
+If the `modules` entry is missing, the module is not constructed and
+`pipeline.push_detections(...)` becomes a no-op returning `False`.
 
 ### 5.1 Module-level parameters
 
@@ -201,12 +218,11 @@ The three dataset configs set `prediction_horizon_s: 1.0`,
 
 The module embeds the full FlowMap state in the DSG itself: each
 backend update writes `graph.metadata["flow"] = {voxel_size, map}`,
-and `BackendModule::save` then serializes it as part of
-`dsg_with_mesh.json`. The offline visualizer reads the same
+and the backend saves it as part of `dsg_with_mesh.json`. The offline visualizer reads the same
 `dsg_with_mesh.json` and renders the voxels; see the post-hoc voxel viz
 section below.
 
-### 5.2 `FlowMapConfig` (nested under `flow_temporal.flow`)
+### 5.2 `FlowMapConfig` (nested under `modules.flow_temporal.flow`)
 
 Defined in `kairos::FlowMapConfig` (`include/kairos/flow/config.h`).
 
@@ -238,23 +254,12 @@ configuration.
 
 ### Post-hoc voxel visualization
 
-The same launch command renders the flow voxels embedded in the saved
-DSG:
-
-```bash
-roslaunch hydra_visualizer hydra_visualizer.launch \
-    scene_graph:=<out>/backend/dsg_with_mesh.json \
-    color_mesh_by_label:=false
-```
-
-A small Python node (`flow_voxel_publisher.py`) reads
-`graph.metadata.flow.map` from the DSG JSON and publishes the same
-CUBE_LIST markers the live ROS bridge does (`flow_observed_voxels` in
-blue, `flow_nudft_valid_voxels` in red) on
-`/hydra_dsg_visualizer/flow_voxels`. Add a MarkerArray display in RViz
-pointing at that topic if your saved config doesn't already include
-one. Disable with `show_flow_voxels:=false`; stride/cap tunable via
-`flow_voxel_stride` and `flow_voxel_max_cells`.
+A small Python node in `kairos-ros` (`scripts/flow_voxel_publisher.py`)
+reads `graph.metadata.flow.map` from a saved DSG JSON and publishes the
+same CUBE_LIST markers the live ROS bridge does (`flow_observed_voxels` in
+blue, `flow_nudft_valid_voxels` in red). Run it next to the visualizer
+below and add a MarkerArray display in RViz on its topic; see the
+`kairos-ros` README for its arguments.
 
 Each place node carrying a non-empty `flow_components` array gets one
 arrow per retained component, anchored at the node's position. Direction
@@ -263,9 +268,9 @@ is taken from the component's `theta`; arrow length scales with
 `flow_confidence`.
 
 There are two visualization paths. For live streaming, launch
-`hydra_streaming_visualizer.launch` (or the `hydra visualize` shortcut)
-in one terminal and run the pipeline in another with `--publish` (the
-default). The visualizer subscribes to the ZMQ stream the pipeline emits
+Hydra-ROS's `streaming_visualizer.launch.yaml` with the same two
+`kairos-ros` config arguments in one terminal and run the pipeline in another with `--publish`
+(the default). The visualizer subscribes to the ZMQ stream the pipeline emits
 on `tcp://127.0.0.1:8001` and arrows appear on place nodes as soon as
 the flow module has accumulated enough observations and one heavy
 maintenance tick has fired (~30 seconds with default cadence). For
@@ -273,9 +278,10 @@ post-hoc replay, run the pipeline with `-o <out>` and load the saved DSG
 into the file-based visualizer:
 
 ```bash
-roslaunch hydra_visualizer hydra_visualizer.launch \
+ros2 launch hydra_visualizer static_visualizer.launch.yaml \
     scene_graph:=<out>/<scene_stem>/backend/dsg_with_mesh.json \
-    color_mesh_by_label:=false
+    visualizer_config_path:=$(ros2 pkg prefix --share kairos_ros)/config/visualizer_config.yaml \
+    external_plugins_path:=$(ros2 pkg prefix --share kairos_ros)/config/visualizer_plugins.yaml
 ```
 
 Always load `dsg_with_mesh.json`, not `dsg.json`: the arrow plugin skips
@@ -285,16 +291,17 @@ rendering when the mesh is absent.
 
 ## 7. Programmatic API
 
-For driving the pipeline from a Python script, the binding exposes the relevant entry points alongside the standard `step`
-/ `save` / `graph` from base hydra:
+For driving the pipeline from a Python script, `load_pipeline` returns a
+`KairosPipeline`: Hydra's Python pipeline (`step` / `save` / `graph`) paired
+with a handle on the flow module (`FlowModule`) that Hydra runs inside it:
 
 ```python
-from kairos_python._kairos_bindings import KairosPipeline
+from kairos_python.data_loader import get_dataloader
+from kairos_python.pipeline import load_pipeline
 
-pipeline = KairosPipeline.from_file(
-    "<path to YAML>", sensor, robot_id=0, zmq_url="tcp://127.0.0.1:8001"
-)
-pipeline.start()                                    # starts the flow worker
+data = get_dataloader("<scene_dir>")
+pipeline = load_pipeline(data, "tbd", "ade20k_outdoor", output_path="<out>",
+                         enable_lcd=False)          # starts the flow worker
 
 pipeline.step(timestamp_ns, t, q, depth, labels, rgb)
 
@@ -303,9 +310,9 @@ ok = pipeline.push_detections(
     [(x1, y1, z1), (x2, y2, z2), ...],              # world-frame xyz
     [theta1, theta2, ...],                          # heading rad
     [rho1, rho2, ...],                              # speed m/s
+    track_ids=[id1, id2, ...],                      # optional
 )
 
-pipeline.stop()
 pipeline.save()
 ```
 
@@ -318,7 +325,8 @@ not yet been seeded by a `handleMapUpdate` (i.e. before the first
 
 Predicted flow at arbitrary world-frame positions is queried on the C++
 side through `FlowTemporalModule::queryFlowAtPosition`; to call it from
-Python, add a binding alongside `push_detections`.
+Python, add a binding alongside `push_detections` in
+`python/bindings/src/flow_module.cpp`.
 
 ---
 
@@ -329,17 +337,17 @@ new datasets that ship annotated trajectories.
 
 ```bash
 # 1) RGB / depth / poses → FileDataLoader scene (base hydra converter)
-python3 <kairos_ws>/src/hydra-kairos/scripts/tbd_to_filedataloader.py \
+python3 <kairos_ws>/src/kairos/scripts/tbd_to_filedataloader.py \
     --data3d     <tbd_root>/Robot_data/2022-12/cabot_2022-12-07-12-15-36_data3d \
     --trajectory <tbd_root>/Robot_data/2022-12/cabot_2022-12-07-12-15-36-trajectory.yaml \
     --output     ~/Downloads/scene_tbd_2022-12-07-12-15-36
 
 # 2) Semantic labels (replaces the all-zero placeholders the converter wrote)
-python3 <kairos_ws>/src/hydra-kairos/scripts/generate_labels.py \
+python3 <kairos_ws>/src/kairos/scripts/generate_labels.py \
     ~/Downloads/scene_tbd_2022-12-07-12-15-36 --overwrite
 
 # 3) Pedestrian labels (per-segment, timestamped) → tracks.csv
-python3 <kairos_ws>/src/hydra-kairos/scripts/tbd_pedestrian_to_detections.py \
+python3 <kairos_ws>/src/kairos/scripts/tbd_pedestrian_to_detections.py \
     --ped-labels-dir    <tbd_root>/Robot_data/ped_labels_w_time \
     --sync-file         <tbd_root>/Robot_data/zed_sync_times.txt \
     --cabot-time-file   <tbd_root>/Robot_data/2022-12/cabot_2022-12-07-12-15-36time.txt \
@@ -369,12 +377,11 @@ as the scene's frames, so the tracks line up with the scene as written.
 
 ## 9. Extending
 
-Adding a new dataset requires producing a `FileDataLoader` scene
-(see [`data_generation.md`](https://github.com/IacopomC/hydra-kairos/blob/main/doc/data_generation.md) in `hydra-kairos`), producing a `tracks.csv` from whatever
-detection or annotation source the dataset provides, and adding a
-`<dataset>.yaml` under `config/datasets/` with
-`enable_flow_temporal_module: true` plus a `flow_temporal:` block tuned
-for the sensor cadence and observation density.
+Adding a new dataset requires producing a scene folder (§3), producing a
+`tracks.csv` from whatever detection or annotation source the dataset
+provides, and adding a `<dataset>.yaml` under `config/datasets/`, copied
+from `tbd.yaml`, with the `modules.flow_temporal` block tuned for the
+sensor cadence and observation density.
 
 A new in-process detection source — for instance, a live detector
 running in the same Python interpreter as the pipeline — calls
@@ -385,8 +392,8 @@ Adding new place-node attributes requires aligned changes on both sides
 of the `dsg_markers` topic. Append the new field to the metadata write
 in `updatePlaceSummaries` (`src/temporal/flow_temporal_module.cpp`) and
 add a matching read in the visualizer
-(`hydra-kairos-ros/hydra_visualizer/src/scene_graph_renderer.cpp`,
-`makeFlowArrowMarkers` or a sibling). There is no schema validation, so
+(`kairos-ros/src/plugins/flow_place_arrow_plugin.cpp`, or a sibling
+plugin). There is no schema validation, so
 naming mismatches silently render nothing.
 
 ---
@@ -404,8 +411,8 @@ two usual causes are (a) tracks and frames not sharing an epoch — visible
 in the startup `offset (frame - track) = …s` line, and resolved by
 regenerating `tracks.csv` with `--scene-dir` or by passing
 `--auto-align-tracks` for a smoke-test alignment — and (b) the YAML not
-enabling the module, in which case `push_detections` returns `False`
-silently.
+listing the module under `modules`, in which case `push_detections`
+returns `False` silently.
 
 When `N > 0` but no arrows render, check that the detection positions
 fall in the same world frame as `poses.csv`. The simplest sanity check
@@ -426,7 +433,7 @@ control points (60 s by default, 10 s in the dataset configs), covers the
 time between a cell's first observation and the nearest control point.
 
 Profiling is supported via `enable_timing: true` under
-`flow_temporal.flow`, which logs per-call durations from
+`modules.flow_temporal.flow`, which logs per-call durations from
 `addObservation`, `processFrame`, `updatePlaceSummaries`,
 `runDeformationAlignment`, and `runMaintenance`. If the worker is
 saturating, either increase `worker_rate_hz` (catches up faster, more
@@ -449,12 +456,16 @@ Code organization, in dependency order:
   Owns the worker thread, ingestion queue, deformation alignment,
   place-summary writer, and the public ingestion entry points
   (`pushDetectionFrame`, `pushDetections`, `queryFlowAtPosition`).
-- `kairos/python/bindings/src/kairos_pipeline.cpp` — `KairosPipeline`
-  (subclass of Hydra's base pipeline) wires in `FlowTemporalModule` and binds
-  `start`, `stop`, `push_detections`, evaluation, flow-state I/O.
+- `src/temporal/flow_hydra_adapters.cpp`, `src/temporal/flow_module_registry.cpp`
+  — `FlowMapSink` and `FlowUpdateFunctor`, which connect the module to
+  Hydra's active window and backend, and the registry they find it in.
+- `kairos/python/bindings/src/flow_module.cpp` — the `FlowModule` handle on
+  the running module: `push_detections`, evaluation, flow-state I/O.
+- `kairos/python/src/kairos_python/pipeline.py` — `load_pipeline` and
+  `KairosPipeline`, which pairs Hydra's Python pipeline with that handle.
 - `kairos/python/src/kairos_python/commands/run.py` — `kairos run` CLI entry,
   including `--tracks`, `--auto-align-tracks`, and `--tracks-time-shift-ns`.
-- `kairos/config/datasets/tbd.yaml` — reference YAML enabling the module.
+- `kairos/config/datasets/tbd.yaml` — reference YAML configuring the module.
 - `kairos_ros/{include/kairos_ros,src}/flow_temporal_ros_bridge.{h,cpp}`
   — ROS adapter (`OdometryArray` decode, metrics and voxel-marker
   publishers, `query_flow` service).

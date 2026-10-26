@@ -21,6 +21,8 @@
  */
 #include "kairos/temporal/flow_temporal_module.h"
 
+#include <config_utilities/factory.h>
+
 #include <algorithm>
 #include <chrono>
 #include <mutex>
@@ -40,8 +42,9 @@
 
 #include "kairos/flow/poisson_model.h"
 #include "kairos/flow/swnd.h"
-#include "hydra/places/nearest_voxel_utilities.h"
-#include "hydra/utils/log_utilities.h"
+#include "kairos/temporal/flow_module_registry.h"
+#include "hydra/utils/nearest_neighbor_utilities.h"
+#include "hydra/utils/data_directory.h"
 
 #include <nlohmann/json.hpp>
 
@@ -89,6 +92,7 @@ double FlowTemporalModule::PlaceFlowSummary::presence(double delta_t) const {
 void declare_config(FlowTemporalModule::Config& config) {
   using namespace config;
   name("FlowTemporalModule::Config");
+  field(config.name, "name");
   field(config.publish_metrics, "publish_metrics");
   field(config.min_tsdf_weight_for_visibility, "min_tsdf_weight_for_visibility");
   check(config.min_tsdf_weight_for_visibility, GE, 0.0f, "min_tsdf_weight_for_visibility");
@@ -126,6 +130,37 @@ void declare_config(FlowTemporalModule::Config& config) {
   field(config.flow, "flow");
 }
 
+namespace {
+
+// spark_dsg::Metadata is replaced as a whole: copy every entry except the one being
+// rewritten (avoids copying a large stale value just to overwrite it)
+nlohmann::json withEntry(const nlohmann::json& metadata,
+                         const std::string& key,
+                         nlohmann::json value) {
+  auto result = nlohmann::json::object();
+  if (metadata.is_object()) {
+    for (auto iter = metadata.begin(); iter != metadata.end(); ++iter) {
+      if (iter.key() != key) {
+        result[iter.key()] = iter.value();
+      }
+    }
+  }
+
+  result[key] = std::move(value);
+  return result;
+}
+
+}  // namespace
+
+namespace {
+
+const auto registration =
+    config::RegistrationWithConfig<hydra::Module,
+                                   FlowTemporalModule,
+                                   FlowTemporalModule::Config>("FlowTemporalModule");
+
+}  // namespace
+
 FlowTemporalModule::FlowTemporalModule(const Config& config)
     : config(config::checkValid(config)), flow_map_(config.flow) {
   // share the frequency vector so edge-coupling NUDFTs match cell NUDFTs
@@ -149,9 +184,14 @@ FlowTemporalModule::FlowTemporalModule(const Config& config)
             << config.flow.edge_coupling_samples_per_period
             << "x per shortest period -> window=" << phi_window_s
             << "s, min pairs=" << config.flow.edge_coupling_window_min_pairs << ")";
+
+  FlowModuleRegistry::add(config.name, this);
 }
 
-FlowTemporalModule::~FlowTemporalModule() { stop(); }
+FlowTemporalModule::~FlowTemporalModule() {
+  FlowModuleRegistry::remove(config.name, this);
+  stop();
+}
 
 void FlowTemporalModule::start() {
   if (started_) {
@@ -183,19 +223,18 @@ void FlowTemporalModule::stop() {
   started_ = false;
 }
 
-void FlowTemporalModule::save(const LogSetup& setup) {
+void FlowTemporalModule::save(const DataDirectory& output) {
   // Persist the full per-cell flow state alongside the DSG so reload-and-
   // score works across process restarts. The DSG JSON only carries the
   // per-place flow summary (a snapshot at save time); the live NUDFT /
   // Poisson state is what this binary carries and what is needed for
   // time-anchored scoring at arbitrary t.
-  const std::string log_dir = setup.getLogDir("temporal");
-  if (log_dir.empty()) {
-    LOG(WARNING) << "[FlowTemporal] no temporal log dir; skipping flow_state save";
+  if (!output) {
+    LOG(WARNING) << "[FlowTemporal] no output directory; skipping flow_state save";
     return;
   }
   flow_map_.flushVisits();  // feed open per-track visits so no vote is lost
-  const std::string path = log_dir + "/flow_state.bin";
+  const std::string path = output.path("temporal") / "flow_state.bin";
   std::string err;
   if (!saveFlowState(path, &err)) {
     LOG(WARNING) << "[FlowTemporal] flow_state save failed: " << err;
@@ -363,6 +402,7 @@ void FlowTemporalModule::handleMapUpdate(uint64_t,
                                          const VolumetricMap& map,
                                          const ActiveWindowOutput&) {
   std::lock_guard<std::mutex> lock(mutex_);
+  map_memory_stats_ = map.memoryStats();
 
   // Collect the active voxels from the active-window TSDF: this update is the
   // current ground truth, so voxels that dropped out of the active window are
@@ -405,9 +445,14 @@ void FlowTemporalModule::setVisibleVoxels(
   resetActiveVoxelsLocked(voxel_size, std::move(active));
 }
 
+VolumetricMap::MemoryStats FlowTemporalModule::mapMemoryStats() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return map_memory_stats_;
+}
+
 void FlowTemporalModule::handleBackendUpdate(
     uint64_t timestamp_ns,
-    const DynamicSceneGraph& graph,
+    DynamicSceneGraph& graph,
     const kimera_pgmo::DeformationGraph& dgraph) {
   // Called on the backend thread under BackendModule::mutex_, after
   // deformation_graph_->optimize() in callUpdateFunctions(). At this point
@@ -425,7 +470,7 @@ void FlowTemporalModule::handleBackendUpdate(
   if (dgraph.hasVertexKey(prefix)) {
     snap->control_points = dgraph.getInitialPositionsVertices(prefix);
     snap->vertex_stamps = dgraph.getVertexStamps(prefix);
-    snap->gtsam_values = dgraph.getGtsamValues();
+    snap->gtsam_values = dgraph.getValuesCopy();
   }
   if (config.flow.enable_timing) {
     const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -439,7 +484,7 @@ void FlowTemporalModule::handleBackendUpdate(
     latest_snapshot_ = std::move(snap);
     dgraph_updated_ = true;
   }
-  auto& mutable_graph = const_cast<DynamicSceneGraph&>(graph);
+  auto& mutable_graph = graph;
   const double timestamp_s =
       timestamp_ns > 0 ? static_cast<double>(timestamp_ns) * 1.0e-9 : wallClockSeconds();
   updatePlaceSummaries(timestamp_s, mutable_graph);
@@ -449,14 +494,13 @@ void FlowTemporalModule::handleBackendUpdate(
   // graph->save(...), which serializes graph.metadata; the offline
   // visualizer then reads `metadata.flow` directly from the DSG JSON
   // without needing a sidecar file.
-  if (!mutable_graph.metadata.is_object()) {
-    mutable_graph.metadata = nlohmann::json::object();
-  }
   flow_map_.flushVisits();  // feed open per-track visits before serializing
-  mutable_graph.metadata["flow"] = {
-      {"voxel_size", voxel_size_},
-      {"map", flow_map_.toJson()},
-  };
+  mutable_graph.metadata.set(withEntry(mutable_graph.metadata(),
+                                       "flow",
+                                       {
+                                           {"voxel_size", voxel_size_},
+                                           {"map", flow_map_.toJson()},
+                                       }));
 }
 
 void FlowTemporalModule::pushDetectionFrame(
@@ -1614,7 +1658,7 @@ void FlowTemporalModule::updatePlaceSummaries(double timestamp_s,
     metadata.erase("flow_components");
   };
 
-  auto update_layer = [&](LayerId layer_id,
+  auto update_layer = [&](const std::string& layer_id,
                           auto support_getter,
                           size_t& nodes_seen,
                           size_t& nodes_with_support,
@@ -1752,7 +1796,7 @@ void FlowTemporalModule::updatePlaceSummaries(double timestamp_s,
       }
 
       auto attrs_clone = node.attributes().clone();
-      auto& metadata = attrs_clone->metadata;
+      auto metadata = attrs_clone->metadata();
       if (!metadata.is_object()) {
         metadata = nlohmann::json::object();
       }
@@ -1762,6 +1806,7 @@ void FlowTemporalModule::updatePlaceSummaries(double timestamp_s,
         // Erase any stale flow metadata; the next backend iteration will
         // re-evaluate from current voxel state.
         erase_flow_metadata(metadata);
+        attrs_clone->metadata.set(metadata);
         graph.setNodeAttributes(node_id, std::move(attrs_clone));
         continue;
       }
@@ -1883,6 +1928,7 @@ void FlowTemporalModule::updatePlaceSummaries(double timestamp_s,
                             : -1.0;
 
       write_summary_to_metadata(metadata, summary);
+      attrs_clone->metadata.set(metadata);
 
       place_summaries_[node_id] = summary;
       ++place_summary_count;
@@ -1945,7 +1991,14 @@ void FlowTemporalModule::updatePlaceSummaries(double timestamp_s,
     }
 
     if (!place_indices.empty()) {
-      places::NearestVoxelFinder finder(place_indices);
+      // search in voxel units, matching the integer-index gate above
+      std::vector<Eigen::Vector3f> place_points;
+      place_points.reserve(place_indices.size());
+      for (const auto& index : place_indices) {
+        place_points.push_back(index.cast<float>());
+      }
+
+      const PointNeighborSearch finder(place_points);
       const auto cell_indices = flow_map_.cellIndices();
       const size_t cells_total = cell_indices.size();
       size_t cells_assigned = 0;
@@ -1953,18 +2006,16 @@ void FlowTemporalModule::updatePlaceSummaries(double timestamp_s,
       for (const auto& cell_index : cell_indices) {
         bool assigned_here = false;
         bool rejected_here = false;
-        finder.find(cell_index,
-                    1,
-                    [&](const GlobalIndex&,
-                        size_t nn_idx,
-                        int64_t sq_distance) {
-                      if (sq_distance > place_max_sq_voxels[nn_idx]) {
-                        rejected_here = true;
-                        return;
-                      }
-                      bucket_by_place[place_node_ids[nn_idx]].insert(cell_index);
-                      assigned_here = true;
-                    });
+        float sq_distance = 0.0f;
+        size_t nn_idx = 0;
+        if (finder.search(cell_index.cast<float>(), sq_distance, nn_idx)) {
+          if (sq_distance > static_cast<float>(place_max_sq_voxels[nn_idx])) {
+            rejected_here = true;
+          } else {
+            bucket_by_place[place_node_ids[nn_idx]].insert(cell_index);
+            assigned_here = true;
+          }
+        }
         if (assigned_here) {
           ++cells_assigned;
         } else if (rejected_here) {
@@ -2243,7 +2294,7 @@ void FlowTemporalModule::updatePlaceSummaries(double timestamp_s,
 }
 
 void FlowTemporalModule::annotateFlowEdges(DynamicSceneGraph& graph,
-                                           LayerId layer_id) {
+                                           const std::string& layer_id) {
   if (!graph.hasLayer(layer_id)) {
     return;
   }
@@ -2329,14 +2380,13 @@ void FlowTemporalModule::annotateFlowEdges(DynamicSceneGraph& graph,
 
     // forward_flow / reverse_flow are oriented along edge.source -> edge.target.
     auto& edge_metadata = edge.attributes().metadata;
-    if (!edge_metadata.is_object()) {
-      edge_metadata = nlohmann::json::object();
-    }
-    edge_metadata["flow"] = {{"forward_flow", forward_flow},
-                             {"reverse_flow", reverse_flow},
-                             {"occupancy", avg_occupancy},
-                             {"speed", avg_speed},
-                             {"bidirectionality", bidirectionality}};
+    edge_metadata.set(withEntry(edge_metadata(),
+                                "flow",
+                                {{"forward_flow", forward_flow},
+                                 {"reverse_flow", reverse_flow},
+                                 {"occupancy", avg_occupancy},
+                                 {"speed", avg_speed},
+                                 {"bidirectionality", bidirectionality}}));
   }
 }
 

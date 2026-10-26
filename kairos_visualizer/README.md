@@ -12,19 +12,19 @@ It renders a layered, 3D view of a run: the reconstruction geometry, the increme
 
 ## Use
 
-Rendering needs Python 3.9+ (rerun's floor), so it runs in its own environment, separate from the Python 3.8 pipeline. Either install the package:
+Rendering needs Python 3.9+ and rerun-sdk 0.24 or newer, which needs numpy 2, so it runs in its own environment, apart from the pipeline's Python. The Kairos image carries it (`/opt/kairos_viz`, Rerun 0.34.1) as `kairos-visualize`:
+
+```bash
+docker run --rm -v "$PWD":/out --entrypoint kairos-visualize kairos \
+    /out/my_run.npz -o /out/my_run.rrd
+```
+
+or install the package anywhere else:
 
 ```bash
 pip install ./kairos_visualizer          # pulls numpy + rerun-sdk (Python 3.9+)
 kairos-visualize my_run.npz -o my_run.rrd
 # or: python -m kairos_visualizer my_run.npz -o my_run.rrd
-```
-
-or render with the prebuilt image (no local Python 3.9+ needed):
-
-```bash
-docker build -t kairos-viz .   # from this directory (kairos/kairos_visualizer), once
-docker run --rm -v "$PWD":/out kairos-viz /out/my_run.npz -o /out/my_run.rrd
 ```
 
 **Viewing the `.rrd`.** Open it with the Rerun viewer, `rerun my_run.rrd` (`pip install rerun-sdk` provides the binary), and scrub the `time_of_day` timeline. app.rerun.io also opens small recordings; for large files use the native `rerun` binary. Use a rerun-sdk version matching the one that rendered the file.

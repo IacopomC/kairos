@@ -1,5 +1,8 @@
+# Build context of the self-contained image (docker/Dockerfile): this
+# repository. Version-control data and build outputs left in the source tree by
+# a dev build stay out.
+.git
 build/
-devel/
-logs/
 **/__pycache__/
+python/src/kairos_python/_kairos_bindings*.so
 doc/api/

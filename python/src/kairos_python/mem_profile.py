@@ -2,15 +2,9 @@
 
 Samples process RSS alongside scene-graph / dynamics counters every N frames
 into a CSV, to pin *which layer's* growth tracks the RSS climb over multiple
-passes of a fixed environment (the within-scene RAM question in
-``HANDOFF_gate_and_memory_2026-06-13.md``).
-
-Phase 1 (this module, **no rebuild**): everything reachable from Python today --
-DSG node counts per layer split active/archived (the decisive triple-or-flat
-check on revisit), object trajectory-history lengths (the uncapped per-node
-history), and flow dynamics size. The mesh-archive (PGMO ``DeltaCompression``)
-and TSDF-block counters need small pybind additions (Phase 2) and are emitted as
-``-1`` until those bindings exist.
+passes of a fixed environment: DSG node counts per layer split active/archived,
+object trajectory-history lengths, mesh size, flow dynamics size, and the
+active window's TSDF and semantic block footprint.
 
 Usage: pass ``--mem-profile-csv PATH`` (and optionally ``--mem-profile-every N``,
 default 50) to ``kairos run``. Plot each column against ``vmrss_kb`` over the run;
@@ -18,7 +12,7 @@ the series whose slope matches RSS is the culprit.
 """
 import csv
 
-# DSG layer ids -- see hydra-kairos/doc/scene_graph_overview.md. Plain ints so we
+# dsg_stats() keys: objects, places, mesh places (see flow_module.cpp). Plain ints so we
 # don't depend on the DsgLayers enum being importable in every env.
 _LAYERS = {2: "l2_objects", 3: "l3_places", 20: "l20_surface"}
 

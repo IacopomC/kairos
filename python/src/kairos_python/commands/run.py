@@ -23,9 +23,14 @@ import time
 import click
 import hydra_python
 import spark_dsg
-from hydra_python.commands import resolve_output_path
-from hydra_python.data_loader import DataLoader, DataLoaderIter
-from kairos_python.pipeline import load_pipeline, get_config_path, load_configs, viz_params_from_config
+from kairos_python.commands import resolve_output_path
+from kairos_python.data_loader import DataLoader, DataLoaderIter, get_dataloader
+from kairos_python.pipeline import (
+    get_config_path,
+    load_configs,
+    load_pipeline,
+    viz_params_from_config,
+)
 
 
 def _default_orb_vocab():
@@ -42,7 +47,9 @@ def _default_orb_vocab():
                        cfg.parent.parent.parent / "orb_vocab.txt"]
     except Exception:
         pass
-    candidates += [pathlib.Path("/ws/src/orb_vocab.txt"),
+    cache = pathlib.Path(os.environ.get("XDG_CACHE_HOME") or pathlib.Path.home() / ".cache")
+    candidates += [cache / "kairos" / "orb_vocab.txt",
+                   pathlib.Path("/ws/src/orb_vocab.txt"),
                    pathlib.Path.home() / "3dsg-kairos" / "orb_vocab.txt"]
     for c in candidates:
         try:
@@ -237,7 +244,7 @@ def _run_one(
     scene_output_path = (
         None if output_path is None else output_path / scene_path.stem
     )
-    data = hydra_python.get_dataloader(scene_path)
+    data = get_dataloader(scene_path)
 
     tracks = []
     shift_ns = int(tracks_time_shift_ns)
@@ -517,7 +524,7 @@ def _run_one(
         "Optional tracks.csv (output of "
         "scripts/tbd_pedestrian_to_detections.py). When given, detections are "
         "interleaved into the flow temporal module before each frame step. "
-        "Requires `enable_flow_temporal_module: true` in the dataset YAML."
+        "Requires the flow module (`modules.flow_temporal`) in the dataset YAML."
     ),
 )
 @click.option(
@@ -555,8 +562,9 @@ def _run_one(
         "Path to an ORB vocabulary (DBoW2/3 .yml.gz). When set, the "
         "bow_producer data callback runs ORB + DBoW3 per accepted keyframe "
         "and pushes a BowQuery onto Hydra's bow_queue, unblocking "
-        "agent-layer LCD. Run hydra-kairos/scripts/fetch_orb_vocab.sh to download the "
-        "Kimera-VIO ORBvoc.yml.gz to the default cache path."
+        "agent-layer LCD. Run scripts/fetch_orb_vocab.sh to download "
+        "ORB-SLAM2's ORBvoc.txt to the default cache path, where it is found "
+        "without this option."
     ),
 )
 @click.option(

@@ -1,9 +1,9 @@
 /* -----------------------------------------------------------------------------
  * KAIROS: 4D Scene Graphs for Periodic Flow Dynamics.
  *
- * KairosPipeline = Hydra's base PythonPipeline + the flow/temporal module.
+ * FlowModule: Python handle on the flow/temporal module running in Hydra's pipeline.
  * -------------------------------------------------------------------------- */
-#include "kairos/bindings/kairos_pipeline.h"
+#include "kairos/bindings/flow_module.h"
 
 #include <config_utilities/config.h>
 #include <config_utilities/parsing/yaml.h>
@@ -14,9 +14,8 @@
 #include <pybind11/stl.h>
 #include <pybind11/stl/filesystem.h>
 
-#include "hydra/active_window/active_window_module.h"
-#include "hydra/backend/backend_module.h"
-#include "hydra/backend/update_archetypes_functor.h"
+#include "kairos/archetypes/update_archetypes_functor.h"
+#include "kairos/temporal/flow_module_registry.h"
 #include "kairos/flow/swgmm.h"
 
 #include <algorithm>
@@ -35,99 +34,52 @@
 #include <spark_dsg/scene_graph_layer.h>
 #include <spark_dsg/scene_graph_node.h>
 #include <spark_dsg/scene_graph_types.h>
+#include <spark_dsg/serialization/graph_binary_serialization.h>
 
 namespace kairos::python {
 
-void declare_config(KairosPipeline::Config& config) {
-  using namespace config;
-  name("KairosPipeline::Config");
-  base<hydra::python::PythonPipeline::Config>(config);
-  field(config.enable_flow_temporal_module, "enable_flow_temporal_module");
-  field(config.flow_temporal, "flow_temporal");
+namespace {
+
+spark_dsg::DynamicSceneGraph::Ptr graphFromBinary(const pybind11::bytes& contents) {
+  const auto view = static_cast<std::string_view>(contents);
+  return spark_dsg::io::binary::readGraph(reinterpret_cast<const uint8_t*>(view.data()),
+                                          view.size());
 }
 
-KairosPipeline::KairosPipeline(const Config& _config,
-                               const hydra::Sensor::Ptr& sensor,
-                               int robot_id,
-                               int config_verbosity,
-                               bool freeze_global_info,
-                               bool step_mode_only,
-                               std::string zmq_url)
-    : hydra::python::PythonPipeline(_config,
-                                    sensor,
-                                    robot_id,
-                                    config_verbosity,
-                                    freeze_global_info,
-                                    step_mode_only,
-                                    zmq_url),
-      config(_config) {
-  // The base ctor already ran initModules()/startWorkers() with the flow hooks
-  // as no-ops (a virtual call from a base ctor doesn't reach derived
-  // overrides). Now that the object is fully a KairosPipeline, create + wire
-  // the flow module and start its worker if we're in step mode.
-  initExtraModules();
-  if (step_mode_only_) {
-    startExtraWorkers();
-  }
-}
+}  // namespace
 
-KairosPipeline::~KairosPipeline() {
-  // Stop the flow worker while the object is still a KairosPipeline (the base
-  // dtor's stop() would dispatch stopExtraWorkers() to the base no-op).
-  stop();
-}
+FlowHandle::FlowHandle(const std::string& name) : name(name) {}
 
-void KairosPipeline::initExtraModules() {
-  if (!config.enable_flow_temporal_module) {
-    return;
-  }
-  flow_temporal_ = std::make_shared<FlowTemporalModule>(config.flow_temporal);
-  modules_["flow_temporal"] = flow_temporal_;
-  active_window_->addSink(hydra::ActiveWindowModule::Sink::fromMethod(
-      &FlowTemporalModule::handleMapUpdate, flow_temporal_.get()));
-  backend_->addPreUpdateSink(hydra::BackendModule::Sink::fromMethod(
-      &FlowTemporalModule::handleBackendUpdate, flow_temporal_.get()));
-}
+FlowTemporalModule* FlowHandle::module() const { return FlowModuleRegistry::get(name); }
 
-void KairosPipeline::startExtraWorkers() {
-  if (flow_temporal_) {
-    flow_temporal_->start();
-  }
-}
-
-void KairosPipeline::stopExtraWorkers() {
-  if (flow_temporal_) {
-    flow_temporal_->stop();
-  }
-}
-
-void KairosPipeline::resetExtraModules() { flow_temporal_.reset(); }
-
-bool KairosPipeline::pushDetections(double timestamp_s,
+bool FlowHandle::pushDetections(double timestamp_s,
                                     const std::vector<Eigen::Vector3d>& xyz_world,
                                     const std::vector<double>& theta,
                                     const std::vector<double>& rho,
                                     const std::vector<int64_t>& track_ids) {
+  auto* flow_temporal_ = module();
   if (!flow_temporal_) {
     return false;
   }
   return flow_temporal_->pushDetections(timestamp_s, xyz_world, theta, rho, track_ids);
 }
 
-void KairosPipeline::setVisibleVoxels(
+void FlowHandle::setVisibleVoxels(
     float voxel_size_m, const std::vector<Eigen::Vector3d>& xyz_world) {
+  auto* flow_temporal_ = module();
   if (!flow_temporal_) {
     return;
   }
   flow_temporal_->setVisibleVoxels(voxel_size_m, xyz_world);
 }
 
-void KairosPipeline::applyDeformationSnapshot(
+void FlowHandle::applyDeformationSnapshot(
     double timestamp_s,
     const std::vector<Eigen::Vector3d>& points_before,
     const std::vector<double>& stamps_s,
     const std::vector<Eigen::Vector3d>& points_after,
     const std::vector<double>& yaw_after) {
+  auto* flow_temporal_ = module();
   if (!flow_temporal_) {
     return;
   }
@@ -136,20 +88,23 @@ void KairosPipeline::applyDeformationSnapshot(
                                            stamps_s, points_after, yaw_after);
 }
 
-size_t KairosPipeline::pendingDetectionFrames() const {
+size_t FlowHandle::pendingDetectionFrames() const {
+  auto* flow_temporal_ = module();
   return flow_temporal_ ? flow_temporal_->pendingFrames() : 0;
 }
 
-void KairosPipeline::flushDetections() {
+void FlowHandle::flushDetections() {
+  auto* flow_temporal_ = module();
   if (flow_temporal_) {
     flow_temporal_->flush();
   }
 }
 
-std::vector<uint64_t> KairosPipeline::setNavigationalLayer(
+std::vector<uint64_t> FlowHandle::setNavigationalLayer(
     const std::vector<std::array<double, 3>>& positions,
     const std::vector<double>& radii_m,
     const std::vector<std::array<size_t, 2>>& edges) {
+  auto* flow_temporal_ = module();
   // Build a fresh private PLACES layer from the caller's nodes. The default
   // DynamicSceneGraph ctor already creates layer 3 (PLACES).
   nav_graph_ = std::make_shared<spark_dsg::DynamicSceneGraph>();
@@ -182,14 +137,16 @@ std::vector<uint64_t> KairosPipeline::setNavigationalLayer(
   return {nav_node_ids_.begin(), nav_node_ids_.end()};
 }
 
-void KairosPipeline::updatePlaceSummaries(double t) {
+void FlowHandle::updatePlaceSummaries(double t) {
+  auto* flow_temporal_ = module();
   if (flow_temporal_ && nav_graph_) {
     flow_temporal_->updatePlaceSummariesExternal(t, *nav_graph_);
   }
 }
 
-std::vector<FlowTemporalModule::PlaceFlowSummary> KairosPipeline::placeSummaries()
+std::vector<FlowTemporalModule::PlaceFlowSummary> FlowHandle::placeSummaries()
     const {
+  auto* flow_temporal_ = module();
   std::vector<FlowTemporalModule::PlaceFlowSummary> out;
   if (!flow_temporal_) {
     return out;
@@ -204,17 +161,19 @@ std::vector<FlowTemporalModule::PlaceFlowSummary> KairosPipeline::placeSummaries
   return out;
 }
 
-std::vector<FlowMap::CellCount> KairosPipeline::flowVoxels() const {
+std::vector<FlowMap::CellCount> FlowHandle::flowVoxels() const {
+  auto* flow_temporal_ = module();
   return flow_temporal_ ? flow_temporal_->flowCells()
                         : std::vector<FlowMap::CellCount>{};
 }
 
-std::vector<FlowTemporalModule::ObservationScore> KairosPipeline::scoreObservations(
+std::vector<FlowTemporalModule::ObservationScore> FlowHandle::scoreObservations(
     const std::vector<double>& timestamps_s,
     const std::vector<Eigen::Vector3d>& xyz_world,
     const std::vector<double>& theta,
     const std::vector<double>& rho,
     double horizon_s) const {
+  auto* flow_temporal_ = module();
   if (!flow_temporal_) {
     return {};
   }
@@ -222,23 +181,26 @@ std::vector<FlowTemporalModule::ObservationScore> KairosPipeline::scoreObservati
       timestamps_s, xyz_world, theta, rho, horizon_s);
 }
 
-std::vector<FlowMap::PresenceGridEntry> KairosPipeline::presenceGrid(
+std::vector<FlowMap::PresenceGridEntry> FlowHandle::presenceGrid(
     double t_seconds, const std::vector<double>& horizons_s) const {
+  auto* flow_temporal_ = module();
   if (!flow_temporal_) {
     return {};
   }
   return flow_temporal_->presenceGrid(t_seconds, horizons_s);
 }
 
-std::vector<FlowMap::FlowGridEntry> KairosPipeline::flowGrid(double t_seconds) const {
+std::vector<FlowMap::FlowGridEntry> FlowHandle::flowGrid(double t_seconds) const {
+  auto* flow_temporal_ = module();
   if (!flow_temporal_) {
     return {};
   }
   return flow_temporal_->flowGrid(t_seconds);
 }
 
-std::pair<bool, std::string> KairosPipeline::saveFlowState(
+std::pair<bool, std::string> FlowHandle::saveFlowState(
     const std::string& path) const {
+  auto* flow_temporal_ = module();
   if (!flow_temporal_) {
     return {false, "flow temporal module not enabled"};
   }
@@ -247,7 +209,8 @@ std::pair<bool, std::string> KairosPipeline::saveFlowState(
   return {ok, err};
 }
 
-std::pair<bool, std::string> KairosPipeline::loadFlowState(const std::string& path) {
+std::pair<bool, std::string> FlowHandle::loadFlowState(const std::string& path) {
+  auto* flow_temporal_ = module();
   if (!flow_temporal_) {
     return {false, "flow temporal module not enabled"};
   }
@@ -256,126 +219,78 @@ std::pair<bool, std::string> KairosPipeline::loadFlowState(const std::string& pa
   return {ok, err};
 }
 
-FlowMap::StateStats KairosPipeline::flowStats() const {
+FlowMap::StateStats FlowHandle::flowStats() const {
+  auto* flow_temporal_ = module();
   if (!flow_temporal_) {
     return {};
   }
   return flow_temporal_->flowMap().stateStats();
 }
 
-FlowMap::TimingStats KairosPipeline::flowTiming() const {
+FlowMap::TimingStats FlowHandle::flowTiming() const {
+  auto* flow_temporal_ = module();
   if (!flow_temporal_) {
     return {};
   }
   return flow_temporal_->flowMap().timingStats();
 }
 
-FlowTemporalModule::ModuleTiming KairosPipeline::moduleTiming() const {
+FlowTemporalModule::ModuleTiming FlowHandle::moduleTiming() const {
+  auto* flow_temporal_ = module();
   if (!flow_temporal_) {
     return {};
   }
   return flow_temporal_->moduleTiming();
 }
 
-hydra::VolumetricMap::MemoryStats KairosPipeline::mapMemoryStats() const {
-  if (!active_window_) {
+hydra::VolumetricMap::MemoryStats FlowHandle::mapMemoryStats() const {
+  auto* flow_temporal_ = module();
+  if (!flow_temporal_) {
     return {};
   }
-  return active_window_->map().memoryStats();
+  return flow_temporal_->mapMemoryStats();
 }
 
-std::vector<FlowMap::StabilityRecord> KairosPipeline::flowStability() const {
+std::vector<FlowMap::StabilityRecord> FlowHandle::flowStability() const {
+  auto* flow_temporal_ = module();
   if (!flow_temporal_) {
     return {};
   }
   return flow_temporal_->flowMap().stabilityRecords();
 }
 
-std::vector<FlowTemporalModule::LcEvent> KairosPipeline::lcEvents() const {
+std::vector<FlowTemporalModule::LcEvent> FlowHandle::lcEvents() const {
+  auto* flow_temporal_ = module();
   if (!flow_temporal_) {
     return {};
   }
   return flow_temporal_->lcEventsCopy();
 }
 
-std::string KairosPipeline::couplingJson() const {
+std::string FlowHandle::couplingJson() const {
+  auto* flow_temporal_ = module();
   if (!flow_temporal_) {
     return "{}";
   }
   return flow_temporal_->couplingJson();
 }
 
-namespace kairos_pipeline {
+namespace flow_module {
 
 using namespace pybind11::literals;
 namespace py = pybind11;
 
 void addBindings(pybind11::module_& m) {
-  // KairosPipeline IS-A HydraPipeline: the base class (registered by
-  // hydra::python::python_pipeline::addBindings) supplies step/save/reset/
-  // start/stop/graph; this adds the flow-specific surface.
-  py::class_<KairosPipeline, hydra::python::PythonPipeline>(m, "KairosPipeline")
-      .def_static(
-          "from_config",
-          [](const std::string& contents,
-             const hydra::Sensor::Ptr& sensor,
-             int robot_id,
-             int config_verbosity,
-             bool freeze_global_info,
-             bool step_mode_only,
-             const std::string zmq_url) {
-            const auto node = YAML::Load(contents);
-            return std::make_unique<KairosPipeline>(
-                config::fromYaml<KairosPipeline::Config>(node),
-                sensor,
-                robot_id,
-                config_verbosity,
-                freeze_global_info,
-                step_mode_only,
-                zmq_url);
-          },
-          "config"_a,
-          "camera"_a,
-          "robot_id"_a = 0,
-          "config_verbosity"_a = 0,
-          "freeze_global_info"_a = true,
-          "use_step_mode"_a = true,
-          "zmq_url"_a = "")
-      .def_static(
-          "from_file",
-          [](const std::filesystem::path& filepath,
-             const hydra::Sensor::Ptr& sensor,
-             int robot_id,
-             int config_verbosity,
-             bool freeze_global_info,
-             bool step_mode_only,
-             const std::string& zmq_url) {
-            const auto node = YAML::LoadFile(filepath);
-            return std::make_unique<KairosPipeline>(
-                config::fromYaml<KairosPipeline::Config>(node),
-                sensor,
-                robot_id,
-                config_verbosity,
-                freeze_global_info,
-                step_mode_only,
-                zmq_url);
-          },
-          "config"_a,
-          "camera"_a,
-          "robot_id"_a = 0,
-          "config_verbosity"_a = 0,
-          "freeze_global_info"_a = true,
-          "use_step_mode"_a = true,
-          "zmq_url"_a = "")
-      .def_static("default_config",
-                  []() {
-                    std::stringstream ss;
-                    ss << config::toYaml(KairosPipeline::Config());
-                    return ss.str();
-                  })
+  // Handle on a running flow module, found by name. Hydra's pipeline
+  // (hydra_python) owns the module; this exposes the flow-specific surface.
+  py::class_<FlowHandle>(m, "FlowModule")
+      .def(py::init<const std::string&>(), "name"_a = "flow_temporal")
+      .def_readonly("name", &FlowHandle::name)
+      .def_property_readonly("running",
+                             [](const FlowHandle& handle) { return handle.module() != nullptr; })
       .def(
           "push_detections",
-          [](KairosPipeline& pipeline,
+          [](FlowHandle& pipeline,
              double timestamp_s,
              const std::vector<Eigen::Vector3d>& xyz_world,
              const std::vector<double>& theta,
@@ -390,7 +305,7 @@ void addBindings(pybind11::module_& m) {
           "track_ids"_a = std::vector<int64_t>{})
       .def(
           "set_visible_voxels",
-          [](KairosPipeline& pipeline,
+          [](FlowHandle& pipeline,
              float voxel_size_m,
              const std::vector<Eigen::Vector3d>& xyz_world) {
             pipeline.setVisibleVoxels(voxel_size_m, xyz_world);
@@ -399,7 +314,7 @@ void addBindings(pybind11::module_& m) {
           "xyz_world"_a)
       .def(
           "apply_deformation_snapshot",
-          [](KairosPipeline& pipeline,
+          [](FlowHandle& pipeline,
              double timestamp_s,
              const std::vector<Eigen::Vector3d>& points_before,
              const std::vector<double>& stamps_s,
@@ -415,14 +330,14 @@ void addBindings(pybind11::module_& m) {
           "points_after"_a,
           "yaw_after"_a = std::vector<double>{})
       .def("pending_detection_frames",
-           [](const KairosPipeline& pipeline) {
+           [](const FlowHandle& pipeline) {
              return pipeline.pendingDetectionFrames();
            })
       .def("flush_detections",
-           [](KairosPipeline& pipeline) { pipeline.flushDetections(); })
+           [](FlowHandle& pipeline) { pipeline.flushDetections(); })
       .def(
           "set_navigational_layer",
-          [](KairosPipeline& pipeline,
+          [](FlowHandle& pipeline,
              const std::vector<std::array<double, 3>>& positions,
              const std::vector<double>& radii_m,
              const std::vector<std::array<size_t, 2>>& edges) {
@@ -431,12 +346,12 @@ void addBindings(pybind11::module_& m) {
           "positions"_a, "radii_m"_a, "edges"_a = std::vector<std::array<size_t, 2>>{})
       .def(
           "update_place_summaries",
-          [](KairosPipeline& pipeline, double t) {
+          [](FlowHandle& pipeline, double t) {
             pipeline.updatePlaceSummaries(t);
           },
           "t"_a)
       .def("place_summaries",
-           [](const KairosPipeline& pipeline, double presence_horizon_s) {
+           [](const FlowHandle& pipeline, double presence_horizon_s) {
              const auto sums = pipeline.placeSummaries();
              const size_t N = sums.size();
              std::vector<double> occupancy(N), dwell_s(N), extent_m(N), mean_rho(N),
@@ -494,72 +409,8 @@ void addBindings(pybind11::module_& m) {
            // derived at a horizon the caller names. Zero asks whether the place
            // is occupied now.
            "presence_horizon_s"_a = 0.0)
-      .def("nav_snapshot",
-           [](const KairosPipeline& pipeline) {
-             // Extract the PLACES layer as primitives (positions, edges, and the
-             // flow-summary metadata the backend wrote) so no spark_dsg type has
-             // to cross the module boundary. For the viz recorder.
-             py::dict out;
-             std::vector<uint64_t> ids, esrc, etgt;
-             std::vector<double> x, y, dtheta, drho;
-             std::vector<int> support, arch;
-             std::vector<std::vector<double>> ctheta, cweight;
-             auto graph = pipeline.getSceneGraph();
-             if (graph && graph->hasLayer(spark_dsg::DsgLayers::PLACES)) {
-               const auto& layer = graph->getLayer(spark_dsg::DsgLayers::PLACES);
-               for (const auto& [node_id, node_ptr] : layer.nodes()) {
-                 const auto& a =
-                     node_ptr->attributes<spark_dsg::PlaceNodeAttributes>();
-                 ids.push_back(node_id);
-                 x.push_back(a.position.x()); y.push_back(a.position.y());
-                 // Archetype is READ from the C++ classification (the ARCHETYPES
-                 // layer UpdateArchetypesFunctor writes), never recomputed here:
-                 // the place's archetype-layer parent carries the type. 0
-                 // (STATIC) when no archetype parent exists (functor disabled).
-                 int arch_type = 0;
-                 for (const auto parent_id : node_ptr->parents()) {
-                   const auto* parent = graph->findNode(parent_id);
-                   if (!parent) continue;
-                   if (const auto* aa = dynamic_cast<
-                           const spark_dsg::ArchetypeNodeAttributes*>(
-                           parent->getAttributesPtr())) {
-                     arch_type = static_cast<int>(aa->archetype_type);
-                     break;
-                   }
-                 }
-                 arch.push_back(arch_type);
-                 const auto& md = a.metadata;
-                 int sup = 0; double dt = 0.0, dr = 0.0;
-                 std::vector<double> ct, cw;
-                 if (md.is_object()) {          // null/absent until a summary is written
-                   sup = md.value("flow_support", 0);
-                   dt = md.value("flow_dominant_theta", 0.0);
-                   dr = md.value("flow_dominant_rho", 0.0);
-                   if (md.contains("flow_components") && md["flow_components"].is_array()) {
-                     for (const auto& c : md["flow_components"]) {
-                       if (!c.is_object()) continue;
-                       ct.push_back(c.value("theta", 0.0));
-                       cw.push_back(c.value("weight", 0.0));
-                     }
-                   }
-                 }
-                 support.push_back(sup); dtheta.push_back(dt); drho.push_back(dr);
-                 ctheta.push_back(std::move(ct)); cweight.push_back(std::move(cw));
-               }
-               for (const auto& [edge_key, edge] : layer.edges()) {
-                 (void)edge_key;
-                 esrc.push_back(edge.source); etgt.push_back(edge.target);
-               }
-             }
-             out["ids"] = ids; out["x"] = x; out["y"] = y;
-             out["support"] = support; out["dtheta"] = dtheta; out["drho"] = drho;
-             out["arch"] = arch;
-             out["comp_theta"] = ctheta; out["comp_weight"] = cweight;
-             out["edge_src"] = esrc; out["edge_tgt"] = etgt;
-             return out;
-           })
       .def("flow_voxels",
-           [](const KairosPipeline& pipeline) {
+           [](const FlowHandle& pipeline) {
              const auto cells = pipeline.flowVoxels();
              const size_t N = cells.size();
              std::vector<int> vx(N), vy(N), vz(N), count(N);
@@ -574,47 +425,9 @@ void addBindings(pybind11::module_& m) {
              out["count"] = count;   // world = (v + 0.5) * voxel_size
              return out;
            })
-      .def("mesh_snapshot",
-           [](const KairosPipeline& pipeline) {
-             // Dump the Hydra reconstruction mesh (world-frame vertices + faces,
-             // optional per-vertex colour) so the viz can draw real geometry
-             // instead of just the sparse place footprint. Read-only; empty dict
-             // when the graph has no mesh. Flattened arrays (the recorder
-             // reshapes to (V,3)/(F,3)) to avoid list-of-list overhead.
-             py::dict out;
-             const auto graph = pipeline.getSceneGraph();
-             if (!graph) return out;
-             const auto mesh = graph->mesh();
-             if (!mesh) return out;
-             const size_t V = mesh->numVertices();
-             const size_t F = mesh->numFaces();
-             std::vector<float> vx(V), vy(V), vz(V);
-             for (size_t i = 0; i < V; ++i) {
-               const auto& p = mesh->pos(i);
-               vx[i] = p.x(); vy[i] = p.y(); vz[i] = p.z();
-             }
-             std::vector<int> f0(F), f1(F), f2(F);
-             for (size_t i = 0; i < F; ++i) {
-               const auto& f = mesh->face(i);
-               f0[i] = static_cast<int>(f[0]);
-               f1[i] = static_cast<int>(f[1]);
-               f2[i] = static_cast<int>(f[2]);
-             }
-             out["vx"] = vx; out["vy"] = vy; out["vz"] = vz;
-             out["f0"] = f0; out["f1"] = f1; out["f2"] = f2;
-             if (mesh->has_colors) {
-               std::vector<int> r(V), g(V), b(V);
-               for (size_t i = 0; i < V; ++i) {
-                 const auto& c = mesh->color(i);
-                 r[i] = c.r; g[i] = c.g; b[i] = c.b;
-               }
-               out["r"] = r; out["g"] = g; out["b"] = b;
-             }
-             return out;
-           })
       .def(
           "score_observations",
-          [](KairosPipeline& pipeline,
+          [](FlowHandle& pipeline,
              const std::vector<double>& timestamps_s,
              const std::vector<Eigen::Vector3d>& xyz_world,
              const std::vector<double>& theta,
@@ -681,7 +494,7 @@ void addBindings(pybind11::module_& m) {
           "horizon_s"_a = 0.0)
       .def(
           "responsibilities",
-          [](const KairosPipeline& pipeline,
+          [](const FlowHandle& pipeline,
              const std::vector<double>& theta,
              const std::vector<double>& rho) {
             // Soft slot assignments of raw (theta, rho) observations under the
@@ -693,7 +506,11 @@ void addBindings(pybind11::module_& m) {
             if (rho.size() != theta.size()) {
               throw std::invalid_argument("theta and rho must have equal length");
             }
-            FixedComponents components(pipeline.config.flow_temporal.flow);
+            const auto module = pipeline.module();
+            if (!module) {
+              throw std::runtime_error("flow module '" + pipeline.name + "' is not running");
+            }
+            FixedComponents components(module->config.flow);
             std::vector<std::vector<double>> out(theta.size());
             for (size_t i = 0; i < theta.size(); ++i) {
               out[i] = components.responsibilities(theta[i], rho[i]);
@@ -704,7 +521,7 @@ void addBindings(pybind11::module_& m) {
           "rho"_a)
       .def(
           "presence_grid",
-          [](const KairosPipeline& pipeline, double t_seconds,
+          [](const FlowHandle& pipeline, double t_seconds,
              const std::vector<double>& horizons_s) {
             const auto grid = pipeline.presenceGrid(t_seconds, horizons_s);
             const size_t N = grid.size();
@@ -736,7 +553,7 @@ void addBindings(pybind11::module_& m) {
           "horizons_s"_a = std::vector<double>{5.0, 10.0})
       .def(
           "flow_grid",
-          [](const KairosPipeline& pipeline, double t_seconds) {
+          [](const FlowHandle& pipeline, double t_seconds) {
             const auto grid = pipeline.flowGrid(t_seconds);
             const size_t N = grid.size();
             std::vector<int> vx(N), vy(N), vz(N);
@@ -760,20 +577,20 @@ void addBindings(pybind11::module_& m) {
           "t_seconds"_a)
       .def(
           "save_flow_state",
-          [](KairosPipeline& pipeline, const std::string& path) {
+          [](FlowHandle& pipeline, const std::string& path) {
             const auto [ok, err] = pipeline.saveFlowState(path);
             return py::make_tuple(ok, err);
           },
           "path"_a)
       .def(
           "load_flow_state",
-          [](KairosPipeline& pipeline, const std::string& path) {
+          [](FlowHandle& pipeline, const std::string& path) {
             const auto [ok, err] = pipeline.loadFlowState(path);
             return py::make_tuple(ok, err);
           },
           "path"_a)
       .def("flow_stats",
-           [](const KairosPipeline& pipeline) {
+           [](const FlowHandle& pipeline) {
              const auto s = pipeline.flowStats();
              py::dict out;
              out["cells"] = s.cells;
@@ -782,68 +599,8 @@ void addBindings(pybind11::module_& m) {
              out["total_pi_nudft_obs"] = s.total_pi_nudft_obs;
              return out;
            })
-      // Per-layer DSG node counts (active vs archived) + summed object
-      // trajectory-history length, computed in C++ and returned as plain ints.
-      // Used by mem_profile.py to pin which layer's growth tracks the RSS
-      // climb. Returns ints (not the graph) on purpose: the spark_dsg
-      // DynamicSceneGraph python type is registered in a different pybind
-      // module and can't be converted across the _kairos_bindings boundary.
-      .def("dsg_stats",
-           [](const KairosPipeline& pipeline) {
-             py::dict out;
-             const auto graph = pipeline.getSceneGraph();
-             if (!graph) {
-               return out;
-             }
-             std::size_t traj_total = 0;
-             for (const spark_dsg::LayerId layer_id : {2, 3, 20}) {
-               std::size_t active = 0;
-               std::size_t archived = 0;
-               if (graph->hasLayer(layer_id)) {
-                 const auto& layer = graph->getLayer(layer_id);
-                 for (const auto& [node_id, node] : layer.nodes()) {
-                   const auto* attrs = node->getAttributesPtr();
-                   if (attrs && attrs->is_active) {
-                     ++active;
-                   } else {
-                     ++archived;
-                   }
-                   if (const auto* k = dynamic_cast<
-                           const spark_dsg::KhronosObjectAttributes*>(attrs)) {
-                     traj_total += k->trajectory_timestamps.size();
-                   }
-                 }
-               }
-               const std::string base = "l" + std::to_string(layer_id);
-               out[(base + "_active").c_str()] = active;
-               out[(base + "_archived").c_str()] = archived;
-             }
-             out["obj_traj_len_sum"] = traj_total;
-             // Total published mesh geometry (live + committed) as a proxy for
-             // mesh memory. Grows with re-covered ground if archived geometry is
-             // retained; complements the (bounded) live TSDF window.
-             if (const auto mesh = graph->mesh()) {
-               out["mesh_vertices"] = mesh->numVertices();
-               out["mesh_faces"] = mesh->numFaces();
-             }
-             return out;
-           })
-      // Save a snapshot of the current backend DSG to `path` (JSON, optionally
-      // with mesh) for offline/visual inspection. Lets us dump one DSG per pass
-      // and look at how the place graph actually evolves.
-      .def(
-          "dump_dsg",
-          [](const KairosPipeline& pipeline, const std::string& path,
-             bool include_mesh) {
-            const auto graph = pipeline.getSceneGraph();
-            if (graph) {
-              graph->save(path, include_mesh);
-            }
-          },
-          "path"_a,
-          "include_mesh"_a = true)
       .def("flow_timing",
-           [](const KairosPipeline& pipeline) {
+           [](const FlowHandle& pipeline) {
              // Nearest-rank percentile (us -> ms) over per-event samples.
              auto pct = [](std::vector<uint32_t> v, double q) -> double {
                if (v.empty()) return 0.0;
@@ -919,7 +676,7 @@ void addBindings(pybind11::module_& m) {
              return out;
            })
       .def("map_memory_stats",
-           [](const KairosPipeline& pipeline) {
+           [](const FlowHandle& pipeline) {
              const auto m = pipeline.mapMemoryStats();
              py::dict out;
              out["voxels_per_side"] = m.voxels_per_side;
@@ -930,7 +687,7 @@ void addBindings(pybind11::module_& m) {
              return out;
            })
       .def("flow_stability",
-           [](const KairosPipeline& pipeline) {
+           [](const FlowHandle& pipeline) {
              const auto records = pipeline.flowStability();
              py::list out;
              for (const auto& r : records) {
@@ -942,7 +699,7 @@ void addBindings(pybind11::module_& m) {
              return out;
            })
       .def("lc_events",
-           [](const KairosPipeline& pipeline) {
+           [](const FlowHandle& pipeline) {
              const auto events = pipeline.lcEvents();
              py::list out;
              for (const auto& e : events) {
@@ -955,7 +712,170 @@ void addBindings(pybind11::module_& m) {
              return out;
            })
       .def("flow_coupling_json",
-           [](const KairosPipeline& pipeline) { return pipeline.couplingJson(); });
+           [](const FlowHandle& pipeline) { return pipeline.couplingJson(); });
+
+  m.def(
+      "nav_snapshot",
+      [](const py::bytes& graph_binary) {
+             // Extract the PLACES layer as primitives (positions, edges, and the
+             // flow-summary metadata the backend wrote) so no spark_dsg type has
+             // to cross the module boundary. For the viz recorder.
+             py::dict out;
+             std::vector<uint64_t> ids, esrc, etgt;
+             std::vector<double> x, y, dtheta, drho;
+             std::vector<int> support, arch;
+             std::vector<std::vector<double>> ctheta, cweight;
+             const auto graph = graphFromBinary(graph_binary);
+             if (graph && graph->hasLayer(spark_dsg::DsgLayers::PLACES)) {
+               const auto& layer = graph->getLayer(spark_dsg::DsgLayers::PLACES);
+               for (const auto& [node_id, node_ptr] : layer.nodes()) {
+                 const auto& a =
+                     node_ptr->attributes<spark_dsg::PlaceNodeAttributes>();
+                 ids.push_back(node_id);
+                 x.push_back(a.position.x()); y.push_back(a.position.y());
+                 // Archetype is READ from the C++ classification (the ARCHETYPES
+                 // layer UpdateArchetypesFunctor writes), never recomputed here:
+                 // the place's archetype-layer parent carries the type. 0
+                 // (STATIC) when no archetype parent exists (functor disabled).
+                 int arch_type = 0;
+                 for (const auto parent_id : node_ptr->parents()) {
+                   const auto* parent = graph->findNode(parent_id);
+                   if (!parent) continue;
+                   if (const auto* aa =
+                           parent->tryAttributes<spark_dsg::ArchetypeNodeAttributes>()) {
+                     arch_type = static_cast<int>(aa->archetype_type);
+                     break;
+                   }
+                 }
+                 arch.push_back(arch_type);
+                 const auto& md = a.metadata();
+                 int sup = 0; double dt = 0.0, dr = 0.0;
+                 std::vector<double> ct, cw;
+                 if (md.is_object()) {          // null/absent until a summary is written
+                   sup = md.value("flow_support", 0);
+                   dt = md.value("flow_dominant_theta", 0.0);
+                   dr = md.value("flow_dominant_rho", 0.0);
+                   if (md.contains("flow_components") && md["flow_components"].is_array()) {
+                     for (const auto& c : md["flow_components"]) {
+                       if (!c.is_object()) continue;
+                       ct.push_back(c.value("theta", 0.0));
+                       cw.push_back(c.value("weight", 0.0));
+                     }
+                   }
+                 }
+                 support.push_back(sup); dtheta.push_back(dt); drho.push_back(dr);
+                 ctheta.push_back(std::move(ct)); cweight.push_back(std::move(cw));
+               }
+               for (const auto& [edge_key, edge] : layer.edges()) {
+                 (void)edge_key;
+                 esrc.push_back(edge.source); etgt.push_back(edge.target);
+               }
+             }
+             out["ids"] = ids; out["x"] = x; out["y"] = y;
+             out["support"] = support; out["dtheta"] = dtheta; out["drho"] = drho;
+             out["arch"] = arch;
+             out["comp_theta"] = ctheta; out["comp_weight"] = cweight;
+             out["edge_src"] = esrc; out["edge_tgt"] = etgt;
+             return out;
+      },
+      "graph_binary"_a);
+
+  m.def(
+      "mesh_snapshot",
+      [](const py::bytes& graph_binary) {
+             // Dump the Hydra reconstruction mesh (world-frame vertices + faces,
+             // optional per-vertex colour) so the viz can draw real geometry
+             // instead of just the sparse place footprint. Read-only; empty dict
+             // when the graph has no mesh. Flattened arrays (the recorder
+             // reshapes to (V,3)/(F,3)) to avoid list-of-list overhead.
+             py::dict out;
+             const auto graph = graphFromBinary(graph_binary);
+             if (!graph) return out;
+             const auto mesh = graph->mesh();
+             if (!mesh) return out;
+             const size_t V = mesh->numVertices();
+             const size_t F = mesh->numFaces();
+             std::vector<float> vx(V), vy(V), vz(V);
+             for (size_t i = 0; i < V; ++i) {
+               const auto& p = mesh->pos(i);
+               vx[i] = p.x(); vy[i] = p.y(); vz[i] = p.z();
+             }
+             std::vector<int> f0(F), f1(F), f2(F);
+             for (size_t i = 0; i < F; ++i) {
+               const auto& f = mesh->face(i);
+               f0[i] = static_cast<int>(f[0]);
+               f1[i] = static_cast<int>(f[1]);
+               f2[i] = static_cast<int>(f[2]);
+             }
+             out["vx"] = vx; out["vy"] = vy; out["vz"] = vz;
+             out["f0"] = f0; out["f1"] = f1; out["f2"] = f2;
+             if (mesh->has_colors) {
+               std::vector<int> r(V), g(V), b(V);
+               for (size_t i = 0; i < V; ++i) {
+                 const auto& c = mesh->color(i);
+                 r[i] = c.r; g[i] = c.g; b[i] = c.b;
+               }
+               out["r"] = r; out["g"] = g; out["b"] = b;
+             }
+             return out;
+      },
+      "graph_binary"_a);
+
+  // Per-layer DSG node counts (active vs archived) + summed object
+  // trajectory-history length, computed in C++ and returned as plain ints.
+  // Used by mem_profile.py to pin which layer's growth tracks the RSS
+  // climb. The graph arrives serialized (DynamicSceneGraph.to_binary) and
+  // ints come back: the spark_dsg DynamicSceneGraph python type is registered
+  // in a different pybind module and can't be converted across the
+  // _kairos_bindings boundary.
+  m.def(
+      "dsg_stats",
+      [](const py::bytes& graph_binary) {
+             py::dict out;
+             const auto graph = graphFromBinary(graph_binary);
+             if (!graph) {
+               return out;
+             }
+             std::size_t traj_total = 0;
+             // keys keep the layer numbers of the ROS1 version (objects 2, places 3,
+             // mesh places 20) so existing readers are unaffected
+             const std::vector<std::pair<std::string, std::string>> layers{
+                 {spark_dsg::DsgLayers::OBJECTS, "2"},
+                 {spark_dsg::DsgLayers::PLACES, "3"},
+                 {spark_dsg::DsgLayers::MESH_PLACES, "20"}};
+             for (const auto& [layer_name, layer_label] : layers) {
+               std::size_t active = 0;
+               std::size_t archived = 0;
+               if (const auto layer_ptr = graph->findLayer(layer_name)) {
+                 const auto& layer = *layer_ptr;
+                 for (const auto& [node_id, node] : layer.nodes()) {
+                   const auto* attrs = &node->attributes();
+                   if (attrs && attrs->is_active) {
+                     ++active;
+                   } else {
+                     ++archived;
+                   }
+                   if (const auto* k =
+                           node->tryAttributes<spark_dsg::KhronosObjectAttributes>()) {
+                     traj_total += k->trajectory_timestamps.size();
+                   }
+                 }
+               }
+               const std::string base = "l" + layer_label;
+               out[(base + "_active").c_str()] = active;
+               out[(base + "_archived").c_str()] = archived;
+             }
+             out["obj_traj_len_sum"] = traj_total;
+             // Total published mesh geometry (live + committed) as a proxy for
+             // mesh memory. Grows with re-covered ground if archived geometry is
+             // retained; complements the (bounded) live TSDF window.
+             if (const auto mesh = graph->mesh()) {
+               out["mesh_vertices"] = mesh->numVertices();
+               out["mesh_faces"] = mesh->numFaces();
+             }
+             return out;
+      },
+      "graph_binary"_a);
 
   // Standalone access to the SAME archetype rule the backend functor applies,
   // for the offline / ATC path that classifies from place_summaries() (which
@@ -967,7 +887,7 @@ void addBindings(pybind11::module_& m) {
       [](double probability, int support, const std::vector<double>& weights,
          double dominant_weight_threshold, int min_flow_support,
          double min_probability) {
-        return static_cast<int>(hydra::classifyArchetype(
+        return static_cast<int>(classifyArchetype(
             probability, support, weights, dominant_weight_threshold,
             min_flow_support, min_probability));
       },
@@ -975,6 +895,6 @@ void addBindings(pybind11::module_& m) {
       "dominant_weight_threshold"_a, "min_flow_support"_a, "min_probability"_a);
 }
 
-}  // namespace kairos_pipeline
+}  // namespace flow_module
 
 }  // namespace kairos::python

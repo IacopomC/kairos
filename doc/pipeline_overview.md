@@ -80,9 +80,12 @@ writes results back into the scene graph. This file is control flow only.
 - `edge_coupling_map.cpp`: **pairwise coupling** between adjacent voxels.
 - `config.cpp`: configuration.
 
-**Entry point** (`python/bindings/src/kairos_pipeline.cpp`). It wraps the
-scene-graph pipeline together with this module; `kairos_python run` drives it
-frame by frame.
+**Entry point.** Hydra creates this module from the `modules` section of the
+dataset config, and connects it through `FlowMapSink` (active window) and
+`FlowUpdateFunctor` (backend), which find it by name
+(`src/temporal/flow_hydra_adapters.cpp`). `kairos run` drives Hydra's Python
+pipeline frame by frame and reaches the module through the `FlowModule`
+handle (`python/bindings/src/flow_module.cpp`).
 
 ---
 

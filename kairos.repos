@@ -1,0 +1,66 @@
+# Workspace for Kairos on ROS 2 Jazzy: `vcs import src < kairos/kairos.repos`
+# from the workspace root, with Kairos itself already cloned to src/kairos.
+# The Kairos repositories track `main`; the upstream MIT-SPARK dependencies
+# are pinned to the commits this build is verified against. The Docker image
+# (docker/Dockerfile) imports this same file.
+repositories:
+  hydra:
+    type: git
+    url: https://github.com/IacopomC/hydra-kairos.git
+    version: main
+  hydra_ros:
+    type: git
+    url: https://github.com/IacopomC/hydra-kairos-ros.git
+    version: main
+  spark_dsg:
+    type: git
+    url: https://github.com/IacopomC/spark-dsg-kairos.git
+    version: main
+  kairos_ros:
+    type: git
+    url: https://github.com/IacopomC/kairos-ros.git
+    version: main
+  kairos_msgs:
+    type: git
+    url: https://github.com/IacopomC/kairos-msgs.git
+    version: main
+  odom_array_msg:
+    type: git
+    url: https://github.com/IacopomC/odom_array_msg.git
+    version: main
+  kairos-suite:
+    type: git
+    url: https://github.com/IacopomC/kairos-suite.git
+    version: main
+  config_utilities:
+    type: git
+    url: https://github.com/MIT-SPARK/config_utilities.git
+    version: 1df5f6b5444f8823232cfdb1cef69c2bd41ada96
+  ianvs:
+    type: git
+    url: https://github.com/MIT-SPARK/Ianvs.git
+    version: c204dec59fe04ebbc015bcbd8660b2659eb25265
+  kimera_pgmo:
+    type: git
+    url: https://github.com/MIT-SPARK/Kimera-PGMO.git
+    version: 382b1f3530f4df69347309687d6887ed2905446c
+  kimera_rpgo:
+    type: git
+    url: https://github.com/MIT-SPARK/Kimera-RPGO.git
+    version: 222ad5e863daa26419b3341ad62e44fb307cba14
+  pose_graph_tools:
+    type: git
+    url: https://github.com/MIT-SPARK/pose_graph_tools.git
+    version: 965dfe864487be9040195c598fd89718563c348c
+  semantic_inference:
+    type: git
+    url: https://github.com/MIT-SPARK/semantic_inference.git
+    version: 96e5dd0b302170b5982a8019376f71a7fc833af0
+  spatial_hash:
+    type: git
+    url: https://github.com/MIT-SPARK/Spatial-Hash.git
+    version: 8045892f34978d78870d806a50f8e5aefdbe52fc
+  teaser_plusplus:
+    type: git
+    url: https://github.com/MIT-SPARK/TEASER-plusplus.git
+    version: 52a9c52ee7d4c838c5e8a75458c33178be5bfb70

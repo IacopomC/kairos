@@ -13,11 +13,16 @@
 #   The low threshold lets candidates reach BowAgentSolver, which applies its
 #   own.
 #
-# - bow_agent.min_score: 0.005, on the same score scale. The deduplication
-#   window stays at the C++ default of 30 s.
+# - agent_registration.min_score: 0.005, on the same score scale. Repeat
+#   closures to the same node within 30 s are dropped, both by the solver
+#   (dedup_window_s) and by the loop-closure module (min_repeat_interval_s).
+#
+# Place-level registration is on, as the matches it accepts are needed when
+# the object layer is sparse.
 lcd_visualizer_ns: /dsg/lcd_visualizer
 lcd_agent_horizon_s: 3.5
 descriptor_creation_horizon_m: 3.0
+min_repeat_interval_s: 30.0
 lcd:
   enable_agent_registration: true
   place_histogram_config: {min: 0.5, max: 2.5, bins: 30}
@@ -32,6 +37,10 @@ lcd:
     min_score_ratio: 0.95
     min_match_separation_m: 0.0
     type: L1
+  agent_registration:
+    type: BowAgentSolver
+    min_score: 0.005
+    dedup_window_s: 30.0
   objects:
     search:
       min_time_separation_s: 25.0
@@ -56,6 +65,7 @@ lcd:
       min_score_ratio: 0.85
       min_match_separation_m: 8.0
       type: L1
+    enable_registration: true
   teaser:
     estimate_scaling: false
     noise_bound: 0.100
@@ -66,6 +76,3 @@ lcd:
     kcore_heuristic_threshold: 0.5
     inlier_selection_mode: PMC_HEU
     max_clique_time_limit: 3600
-bow_agent:
-  min_score: 0.005
-  dedup_window_s: 30.0

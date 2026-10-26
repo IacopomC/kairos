@@ -20,7 +20,7 @@ dependencies = [
   "tqdm",
   "spark_dsg[viz]",
   # hydra_python supplies the generic data loaders reused by `kairos run`.
-  # Installed from the hydra-kairos fork (pip install ./hydra-flow), not PyPI.
+  # Installed from the hydra-kairos fork (pip install ./hydra), not PyPI.
 ]
 
 [project.scripts]
@@ -37,3 +37,6 @@ packages = [
 [tool.setuptools.package-dir]
 "kairos_python" = "python/src/kairos_python"
 "kairos_python.config" = "config"
+
+[tool.setuptools.package-data]
+"kairos_python.config" = ["**/*.yaml"]

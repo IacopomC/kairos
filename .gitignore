@@ -1,8 +1,7 @@
 # build / install artifacts
 build/
 devel/
-install/*
-!install/kairos.rosinstall
+install/
 logs/
 *.so
 *.o

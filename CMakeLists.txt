@@ -23,6 +23,7 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 add_library(kairos
+  src/archetypes/update_archetypes_functor.cpp
   src/flow/cell_state.cpp
   src/flow/config.cpp
   src/flow/edge_coupling_map.cpp
@@ -31,6 +32,9 @@ add_library(kairos
   src/flow/poisson_model.cpp
   src/flow/swgmm.cpp
   src/flow/swnd.cpp
+  src/loop_closure/bow_agent_solver.cpp
+  src/temporal/flow_hydra_adapters.cpp
+  src/temporal/flow_module_registry.cpp
   src/temporal/flow_temporal_module.cpp
 )
 add_library(kairos::kairos ALIAS kairos)
@@ -93,3 +97,10 @@ install(FILES
 # install config + docs alongside the package (referenced by the python CLI)
 install(DIRECTORY config/ DESTINATION ${CMAKE_INSTALL_DATADIR}/kairos/config
         OPTIONAL)
+
+# Under ROS 2, register the package so launch files can find its configs
+# ($(find-pkg-share kairos)/config).
+find_package(ament_cmake_core QUIET)
+if(${ament_cmake_core_FOUND})
+  ament_package()
+endif()

@@ -4,14 +4,16 @@ This document covers the YAML parameters for the temporal flow stack:
 the `FlowTemporalModule` (worker thread, deformation alignment, place
 summaries) and the `FlowMap` (per-cell statistical model).
 
-The relevant YAML block lives at `flow_temporal:` inside a dataset config
-(see `config/datasets/tbd.yaml`).
+The relevant YAML block lives at `modules.flow_temporal` inside a dataset
+config (see `config/datasets/tbd.yaml`).
 
 ```
-flow_temporal:        # → FlowTemporalModule::Config
-  ...module-level fields...
-  flow:               # → FlowMapConfig
-    ...flow-map fields...
+modules:
+  flow_temporal:        # → FlowTemporalModule::Config
+    type: FlowTemporalModule
+    ...module-level fields...
+    flow:               # → FlowMapConfig
+      ...flow-map fields...
 ```
 
 The C++ structs are at:
@@ -65,16 +67,15 @@ weighted averages. Per-cell cost is logged at INFO level
 
 **Trigger.** The worker checks `dgraph_updated_` once per
 `heavy_maintenance_rate_hz` tick. The flag is set by `handleBackendUpdate`,
-which is registered as a `pre_update_sink` on the backend
-(`python/bindings/src/kairos_pipeline.cpp`). So one alignment runs
+which `FlowUpdateFunctor` calls when Hydra's backend runs its update functors
+(`src/temporal/flow_hydra_adapters.cpp`). So one alignment runs
 per backend update cycle (post-optimization), throttled to the maintenance
 rate.
 
-**Threading note.** `handleBackendUpdate` is called on the backend thread
-inside the backend's mutex (`hydra-kairos/src/backend/backend_module.cpp` from
-`callUpdateFunctions`, which is invoked from `optimize()` after
-`deformation_graph_->optimize()`). This is the synchronization point at
-which the dgraph is consistent. The worker thread reads the dgraph
+**Threading note.** `handleBackendUpdate` is called on the backend thread,
+from `callUpdateFunctions` in Hydra's backend (`src/backend/dsg_updater.cpp`),
+which the backend invokes after optimizing the deformation graph. This is the
+synchronization point at which the dgraph is consistent. The worker thread reads the dgraph
 asynchronously and must therefore use a snapshot (or share the backend
 mutex) to avoid racing with the next backend update.
 

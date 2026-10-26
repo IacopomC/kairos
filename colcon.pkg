@@ -1,0 +1,3 @@
+---
+name: kairos
+hooks: [share/kairos/local_setup.bash, share/kairos/local_setup.dsv, share/kairos/local_setup.sh, share/kairos/local_setup.zsh]

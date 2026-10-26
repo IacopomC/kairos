@@ -38,28 +38,69 @@ import pathlib
 import pprint
 
 import yaml
+from hydra_python import HydraPipeline, set_glog_dir
 
-from kairos_python._kairos_bindings import KairosPipeline, set_glog_dir
+from kairos_python._kairos_bindings import FlowModule, dsg_stats, mesh_snapshot, nav_snapshot
 
-# The dataloader (hydra_python) builds its Camera from _hydra_bindings, but
-# KairosPipeline.from_config only accepts a _kairos_bindings.Sensor -- the two
-# pybind modules register distinct, incompatible Sensor types. Until the bindings
-# share a single Sensor type (support-lib refactor), repoint the dataloader's
-# Camera/CameraConfig/ExtrinsicsConfig at the kairos binding so data.sensor is a
-# kairos Sensor and the official `kairos run` works without a custom driver.
-try:  # pragma: no cover - import-time shim
-    import hydra_python.data_loader as _hydra_dl
-    from kairos_python._kairos_bindings import (
-        Camera as _KCamera,
-        CameraConfig as _KCameraConfig,
-        ExtrinsicsConfig as _KExtrinsicsConfig,
-    )
 
-    _hydra_dl.Camera = _KCamera
-    _hydra_dl.CameraConfig = _KCameraConfig
-    _hydra_dl.ExtrinsicsConfig = _KExtrinsicsConfig
-except Exception:  # noqa: BLE001 - leave dataloader untouched if layout differs
-    pass
+class KairosPipeline:
+    """Hydra's pipeline with the Kairos flow module running inside it.
+
+    Hydra runs the flow module (configured under `modules`), so this pairs the
+    Hydra pipeline (stepping, saving, the scene graph) with a handle on the flow
+    module (detections, flow state and queries). Hydra methods and flow methods
+    are both available on this object.
+    """
+
+    def __init__(self, pipeline, output_path=None, flow_module="flow_temporal"):
+        self._pipeline = pipeline
+        self._output_path = output_path
+        self._flow = FlowModule(flow_module)
+        # In step mode this starts only the background modules (the flow
+        # worker, loop closure); step() drives the rest.
+        self._pipeline.start()
+
+    @property
+    def flow(self):
+        """Handle on the flow module."""
+        return self._flow
+
+    @property
+    def graph(self):
+        """Copy of the current backend scene graph."""
+        return self._pipeline.graph
+
+    def save(self, output_path=None):
+        """Save the pipeline state (graph, flow state, timing) to the output path."""
+        path = output_path if output_path is not None else self._output_path
+        if path is None:
+            raise ValueError("no output path to save to")
+
+        self._pipeline.save(pathlib.Path(path))
+
+    def nav_snapshot(self):
+        """Places layer as primitives (positions, edges, flow summaries)."""
+        return nav_snapshot(self._pipeline.graph.to_binary(include_mesh=False))
+
+    def mesh_snapshot(self):
+        """Reconstruction mesh as flat vertex/face arrays."""
+        return mesh_snapshot(self._pipeline.graph.to_binary(include_mesh=True))
+
+    def dsg_stats(self):
+        """Per-layer active/archived node counts and mesh size."""
+        return dsg_stats(self._pipeline.graph.to_binary(include_mesh=True))
+
+    def dump_dsg(self, path, include_mesh=True):
+        """Save the current backend scene graph to `path`."""
+        self._pipeline.save_graph(str(path), include_mesh)
+
+    def __getattr__(self, name):
+        # flow methods first, then the Hydra pipeline's
+        flow = self.__dict__.get("_flow")
+        if flow is not None and hasattr(flow, name):
+            return getattr(flow, name)
+
+        return getattr(self.__dict__["_pipeline"], name)
 
 
 def get_config_path(dataset=None):
@@ -75,6 +116,11 @@ def get_config_path(dataset=None):
 
     logging.error("failed to find config directory of package!")
     raise RuntimeError("invalid config path")
+
+
+def flow_config(contents, name="flow_temporal"):
+    """Config of the flow module in a resolved config tree (empty if absent)."""
+    return ((contents or {}).get("modules", {}) or {}).get(name, {}) or {}
 
 
 def update_nested(contents, other):
@@ -110,10 +156,10 @@ def load_configs(
     enable_lcd: Whether the loop-closure module should be constructed and
         run. When True, lcd_use_bow_vectors is left at its C++ default (true)
         so PipelineQueues::bow_queue is allocated and the offline BoW producer
-        (hydra_python.bow_producer) can feed agent-layer LCD;
-        enable_agent_registration is forced True so the python binding
-        registers a BowAgentSolver at level 0 (substituting for the ROS
-        DsgAgentSolver). When False, no LCD config is merged and the
+        (kairos_python.bow_producer) can feed agent-layer LCD;
+        enable_agent_registration is forced True so the agent-level solver
+        configured under lcd.agent_registration (BowAgentSolver, substituting
+        for the ROS DsgAgentSolver) is used. When False, no LCD config is merged and the
         baseline `enable_lcd: false` default applies, leaving the dataset
         YAML in control of any non-LCD lcd_* fields.
 
@@ -167,21 +213,15 @@ def load_configs(
             "objects": {"bounding_box_type": bounding_box_type},
         },
         "backend": {"type": "BackendModule"},
-        "reconstruction": {
-            "type": "ReconstructionModule",
-            "show_stats": False,
-            "pose_graphs": {"make_pose_graph": True},
-        },
         "enable_lcd": bool(enable_lcd),
     }
     if enable_lcd:
         overrides["lcd"] = {
-            # The python binding registers BowAgentSolver at level 0
-            # (python_pipeline.cpp::initModules) when this flag is true, so
-            # agent-LCD short-circuits the cascade before places-LCD runs.
-            # lcd_use_bow_vectors is left at the C++ default (true) so
-            # bow_queue is allocated for the offline DBoW producer in
-            # hydra_python.bow_producer.
+            # The agent-level solver (lcd.agent_registration) runs only with
+            # this flag set, so agent-LCD short-circuits the cascade before
+            # places-LCD runs. lcd_use_bow_vectors is left at the C++ default
+            # (true) so bow_queue is allocated for the offline DBoW producer in
+            # kairos_python.bow_producer.
             "enable_agent_registration": True,
         }
     update_nested(contents, overrides)
@@ -256,7 +296,8 @@ def load_pipeline(
 
     `config_overrides` is an optional nested dict merged into the resolved config
     (e.g. {"flow_temporal": {"place_summary_max_nodes": 0}}), for callers that
-    need to tweak a field without editing the dataset yaml.
+    need to tweak a field without editing the dataset yaml. A `flow_temporal`
+    entry applies to the flow module (`modules.flow_temporal`).
     """
     contents = load_configs(
         config_name, labelspace=labelspace, enable_lcd=enable_lcd
@@ -265,10 +306,15 @@ def load_pipeline(
         return None
 
     if config_overrides:
-        update_nested(contents, config_overrides)
+        overrides = dict(config_overrides)
+        flow_overrides = overrides.pop("flow_temporal", None)
+        if flow_overrides:
+            update_nested(overrides, {"modules": {"flow_temporal": flow_overrides}})
+
+        update_nested(contents, overrides)
 
     if output_path:
-        update_nested(contents, {"log_path": str(output_path)})
+        output_path = pathlib.Path(output_path)
         glog_dir = output_path / "logs"
         if not glog_dir.exists():
             glog_dir.mkdir(parents=True)
@@ -286,12 +332,13 @@ def load_pipeline(
         )
 
     logging.debug(pprint.pformat(contents, sort_dicts=False))
-    pipeline = KairosPipeline.from_config(
-        yaml.safe_dump(contents),
+    # keep key order: update functors are applied in the order they are listed
+    pipeline = HydraPipeline.from_config(
+        yaml.safe_dump(contents, sort_keys=False),
         data.sensor,
         robot_id=0,
         config_verbosity=config_verbosity,
-        zmq_url="" if zmq_url is None else zmq_url
+        zmq_url="" if zmq_url is None else zmq_url,
     )
 
-    return pipeline
+    return KairosPipeline(pipeline, output_path=output_path)

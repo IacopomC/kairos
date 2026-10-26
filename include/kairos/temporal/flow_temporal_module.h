@@ -2,6 +2,7 @@
 
 #include <hydra/active_window/active_window_module.h>
 #include <hydra/backend/backend_module.h>
+#include <config_utilities/factory.h>
 #include <hydra/common/module.h>
 #include <hydra/reconstruction/volumetric_map.h>
 #include <hydra/reconstruction/voxel_types.h>
@@ -47,6 +48,9 @@ class FlowTemporalModule : public Module {
  public:
   /// Tunable parameters for the module. Validated by declare_config.
   struct Config {
+    //! Name the module is registered under, which its map sink and backend functor
+    //! use to find it
+    std::string name = "flow_temporal";
     bool publish_metrics = true;
     float min_tsdf_weight_for_visibility = 1.0e-3f;  ///< Min reconstruction weight for a voxel to count as visible.
     float worker_rate_hz = 5.0f;                     ///< Rate at which the worker thread drains the frame queue.
@@ -233,7 +237,7 @@ class FlowTemporalModule : public Module {
 
   void start() override;
   void stop() override;
-  void save(const LogSetup& setup) override;
+  void save(const DataDirectory& output) override;
   std::string printInfo() const override;
 
   /**
@@ -257,8 +261,12 @@ class FlowTemporalModule : public Module {
    * with the saved scene graph.
    */
   void handleBackendUpdate(uint64_t timestamp_ns,
-                           const DynamicSceneGraph& graph,
+                           DynamicSceneGraph& graph,
                            const kimera_pgmo::DeformationGraph& dgraph);
+
+  /// Voxel-layer footprint of the active window at the last map update (zeroed
+  /// before the first one), for the bounded-memory analysis.
+  VolumetricMap::MemoryStats mapMemoryStats() const;
 
   /// Push a pre-decoded detection frame onto the worker queue. Called by the
   /// live adapter and by the offline entry point. Voxel indices in
@@ -454,7 +462,7 @@ class FlowTemporalModule : public Module {
   /// @brief Aggregate per-voxel cell state into place-node-level flow summaries.
   void updatePlaceSummaries(double timestamp_s, DynamicSceneGraph& graph);
   /// @brief Write per-edge flow attributes onto the scene graph at @p layer_id.
-  void annotateFlowEdges(DynamicSceneGraph& graph, LayerId layer_id);
+  void annotateFlowEdges(DynamicSceneGraph& graph, const std::string& layer_id);
   /// @brief Set the grid resolution and replace the active-voxel set. The single
   /// writer of voxel_size_, voxel_grid_, and active_voxels_; both handleMapUpdate
   /// (indices from the TSDF) and setVisibleVoxels (indices from a supplied point
@@ -471,6 +479,8 @@ class FlowTemporalModule : public Module {
   std::unique_ptr<std::thread> worker_thread_;
   bool should_shutdown_ = false;
   bool started_ = false;
+  VolumetricMap::MemoryStats map_memory_stats_;
+
   bool dgraph_updated_ = false;
   bool worker_processing_ = false;  ///< True while the worker owns an in-flight
                                     ///< batch (queue drained but not yet done);

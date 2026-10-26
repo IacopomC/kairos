@@ -1,7 +1,7 @@
 """Setup script for the kairos python package (builds _kairos_bindings).
 
-Mirrors hydra_python's CMake-extension build. Build the catkin workspace first
-(so libhydra/libkairos and their CMake configs are in devel/) and source it,
+Mirrors hydra_python's CMake-extension build. Build the colcon workspace first
+(so libhydra/libkairos and their CMake configs are in install/) and source it,
 then `pip install .` from this directory.
 """
 

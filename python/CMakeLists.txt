@@ -17,48 +17,59 @@ if(_pybind11_rc EQUAL 0)
 else()
   find_package(pybind11 REQUIRED)
 endif()
-find_package(OpenCV REQUIRED COMPONENTS core imgproc)
 
-# When built standalone (via setup.py) find the catkin-installed libs; when
-# added from kairos/CMakeLists the targets already exist.
+# When built standalone (via setup.py) find the installed libs; when added from
+# kairos/CMakeLists the targets already exist.
 if(PROJECT_IS_TOP_LEVEL)
   find_package(hydra REQUIRED)
   find_package(kairos REQUIRED)
 endif()
 
-# Hydra's generic pybind helpers + base pipeline live in the hydra-flow source
-# tree (they are Hydra's code and stay there). KAIROS compiles them into its
-# OWN self-contained bindings module so `kairos run` never imports
-# _hydra_bindings. Override HYDRA_FLOW_DIR if the layout differs.
-set(HYDRA_FLOW_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hydra-kairos"
-    CACHE PATH "Path to the hydra-flow source tree")
-set(_hb_src "${HYDRA_FLOW_DIR}/python/bindings/src")
-set(_hb_inc "${HYDRA_FLOW_DIR}/python/bindings/include")
-if(NOT EXISTS "${_hb_src}/python_pipeline.cpp")
-  message(FATAL_ERROR
-    "Could not find Hydra binding sources at ${_hb_src}. "
-    "Set -DHYDRA_FLOW_DIR=/path/to/hydra-flow.")
+# DBoW3 powers the offline bag-of-words producer (bindings/src/bow_producer.cpp).
+include(FetchContent)
+FetchContent_Declare(
+  dbow3
+  GIT_REPOSITORY https://github.com/rmsalinas/DBow3.git
+  GIT_TAG 1cc587bbfc08c0adb0ea2d00d81ad6cd4103ce39
+)
+# Skip DBoW3's bundled demo/utility executables.
+set(BUILD_UTILS OFF CACHE BOOL "" FORCE)
+# DBoW3's CMakeLists declares cmake_minimum_required(VERSION 2.6), which
+# CMake 3.27+ refuses. CMAKE_POLICY_VERSION_MINIMUM tells CMake to apply
+# the policies of 3.5 even when the included project asked for 2.6.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+# Build DBoW3 static, linked into _kairos_bindings, so the module carries no
+# separate shared library to ship. CMP0077 lets this BUILD_SHARED_LIBS override
+# DBoW3's own option() default.
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+set(_kairos_shared_libs ${BUILD_SHARED_LIBS})
+set(BUILD_SHARED_LIBS OFF)
+FetchContent_MakeAvailable(dbow3)
+set(BUILD_SHARED_LIBS ${_kairos_shared_libs})
+unset(_kairos_shared_libs)
+if(TARGET DBoW3)
+  target_compile_options(DBoW3 PRIVATE -w)  # silence third-party warnings
+  set_target_properties(DBoW3 PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endif()
+
+# ORB lives in opencv_features2d
+find_package(OpenCV REQUIRED COMPONENTS core imgproc features2d)
+find_package(pose_graph_tools REQUIRED)
 
 pybind11_add_module(_kairos_bindings
   bindings/src/bindings.cpp
-  bindings/src/kairos_pipeline.cpp
-  ${_hb_src}/python_pipeline.cpp
-  ${_hb_src}/glog_utilities.cpp
-  ${_hb_src}/python_image.cpp
-  ${_hb_src}/python_sensor_input.cpp
-  ${_hb_src}/python_sensors.cpp
-  ${_hb_src}/color_parser.cpp
-  ${_hb_src}/depth_parser.cpp
-  ${_hb_src}/label_parser.cpp
+  bindings/src/bow_producer.cpp
+  bindings/src/flow_module.cpp
 )
 target_include_directories(_kairos_bindings PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/bindings/include
-  ${_hb_inc}
+  ${dbow3_SOURCE_DIR}/src  # DBoW3.h umbrella header
   ${OpenCV_INCLUDE_DIRS}
 )
 target_link_libraries(_kairos_bindings PRIVATE
   kairos::kairos
   hydra::hydra
+  pose_graph_tools::pose_graph_tools
+  DBoW3
   ${OpenCV_LIBRARIES}
 )

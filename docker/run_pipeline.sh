@@ -11,7 +11,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_SRC="$(cd "${HERE}/../.." && pwd)"
 DATASETS="${KAIROS_DATASETS:-$HOME/datasets}"
 OUT="${KAIROS_OUT:-$HOME/kairos_exp_out}"
-NAME="${KAIROS_CONTAINER:-kairos}"
+NAME="${KAIROS_CONTAINER:-kairos-colcon}"
 
 IMAGE="${KAIROS_IMAGE:-}"
 if [[ -z "$IMAGE" ]]; then
@@ -23,7 +23,7 @@ if ! docker ps --format '{{.Names}}' | grep -qx "$NAME"; then
   docker rm -f "$NAME" >/dev/null 2>&1 || true
   docker run -d --name "$NAME" \
     -v "${WS_SRC}:/ws/src" \
-    -v kairos_ws_build:/ws/build -v kairos_ws_devel:/ws/devel -v kairos_ws_logs:/ws/logs \
+    -v kairos_colcon_build:/ws/build -v kairos_colcon_install:/ws/install -v kairos_colcon_logs:/ws/logs \
     -v "${DATASETS}:/data" -v "${OUT}:/out" \
     "$IMAGE" bash -lc 'sleep infinity' >/dev/null
 fi
@@ -34,7 +34,4 @@ if ! docker exec "$NAME" bash -lc 'source /ws/src/kairos/docker/kenv.sh && pytho
   docker exec "$NAME" bash /ws/src/kairos/docker/setup_runtime.sh
 fi
 
-# NOTE: catkin's setup.bash inspects $@ when sourced, so clear the positional
-# args first (otherwise `--help`/`-c` etc. break it and LD_LIBRARY_PATH is never
-# set -> libkimera_pgmo.so not found), then run kairos with the saved args.
-docker exec "$NAME" bash -lc 'kargs=("$@"); set --; source /ws/src/kairos/docker/kenv.sh; python3 -m kairos_python run "${kargs[@]}"' _ "$@"
+docker exec "$NAME" bash -lc 'source /ws/src/kairos/docker/kenv.sh; python3 -m kairos_python run "$@"' _ "$@"
