@@ -36,7 +36,7 @@ Kairos was developed using Ubuntu 20.04 and ROS 1 Noetic. Docker is the recommen
 
 ```bash
 mkdir -p ~/kairos_ws/src && cd ~/kairos_ws/src
-git clone https://github.com/IacopomC/kairos.git
+git clone -b archive/ros_noetic https://github.com/IacopomC/kairos.git
 vcs import . < kairos/install/kairos.rosinstall   # needs python3-vcstool
 ```
 

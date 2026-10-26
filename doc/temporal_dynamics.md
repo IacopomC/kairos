@@ -50,7 +50,7 @@ alignment with the place-place edge direction, plus bidirectionality)
 are written once per edge into the edge's own
 `EdgeAttributes::metadata` under a `flow` key, oriented along
 `edge.source -> edge.target`. See
-[`place_aggregation.md`](https://github.com/IacopomC/hydra-kairos/blob/main/doc/place_aggregation.md) in `hydra-kairos` for a conceptual walk-through of the partition
+[`place_aggregation.md`](https://github.com/IacopomC/hydra-kairos/blob/archive/ros_noetic/doc/place_aggregation.md) in `hydra-kairos` for a conceptual walk-through of the partition
 choice and what each summary field means.
 
 The visualizer reads exactly those fields. The arrow rendering is
@@ -92,8 +92,8 @@ paths is the entry point for detections: `OdometryArray` callback in ROS,
 ## 3. Inputs
 
 The frame stream — RGB, depth, labels, poses — is the base pipeline's.
-Refer to [`non_ros_usage.md`](https://github.com/IacopomC/hydra-kairos/blob/main/doc/non_ros_usage.md) in `hydra-kairos` for the `FileDataLoader` contract
-and to [`data_generation.md`](https://github.com/IacopomC/hydra-kairos/blob/main/doc/data_generation.md) for converting raw datasets into that layout.
+Refer to [`non_ros_usage.md`](https://github.com/IacopomC/hydra-kairos/blob/archive/ros_noetic/doc/non_ros_usage.md) in `hydra-kairos` for the `FileDataLoader` contract
+and to [`data_generation.md`](https://github.com/IacopomC/hydra-kairos/blob/archive/ros_noetic/doc/data_generation.md) for converting raw datasets into that layout.
 
 Detections are an additional per-frame stream. The on-disk format is a
 sorted CSV with one header row:
@@ -370,7 +370,7 @@ as the scene's frames, so the tracks line up with the scene as written.
 ## 9. Extending
 
 Adding a new dataset requires producing a `FileDataLoader` scene
-(see [`data_generation.md`](https://github.com/IacopomC/hydra-kairos/blob/main/doc/data_generation.md) in `hydra-kairos`), producing a `tracks.csv` from whatever
+(see [`data_generation.md`](https://github.com/IacopomC/hydra-kairos/blob/archive/ros_noetic/doc/data_generation.md) in `hydra-kairos`), producing a `tracks.csv` from whatever
 detection or annotation source the dataset provides, and adding a
 `<dataset>.yaml` under `config/datasets/` with
 `enable_flow_temporal_module: true` plus a `flow_temporal:` block tuned

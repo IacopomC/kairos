@@ -4,7 +4,9 @@
 #   vcs import src < src/kairos/install/kairos.rosinstall
 #
 # The Docker image (docker/Dockerfile) imports this same manifest.
-# KAIROS packages + Hydra forks track `main` (IacopomC). Upstream MIT-SPARK
+# KAIROS packages + Hydra forks track their frozen ROS 1 branch,
+# `archive/ros_noetic` (IacopomC); the suite, which serves ROS 1 and ROS 2,
+# tracks `main`. Upstream MIT-SPARK
 # dependencies are pinned to a commit, or to their frozen `archive/ros_noetic`
 # branch.
 
@@ -16,27 +18,27 @@
 - git:
     local-name: kairos-ros
     uri: https://github.com/IacopomC/kairos-ros.git
-    version: main
+    version: archive/ros_noetic
 - git:
     local-name: kairos-msgs
     uri: https://github.com/IacopomC/kairos-msgs.git
-    version: main
+    version: archive/ros_noetic
 - git:
     local-name: hydra-kairos
     uri: https://github.com/IacopomC/hydra-kairos.git
-    version: main
+    version: archive/ros_noetic
 - git:
     local-name: hydra-kairos-ros
     uri: https://github.com/IacopomC/hydra-kairos-ros.git
-    version: main
+    version: archive/ros_noetic
 - git:
     local-name: spark-dsg-kairos
     uri: https://github.com/IacopomC/spark-dsg-kairos.git
-    version: main
+    version: archive/ros_noetic
 - git:
     local-name: odom_array_msg
     uri: https://github.com/IacopomC/odom_array_msg.git
-    version: main
+    version: archive/ros_noetic
 
 # ---- unmodified upstream dependencies (MIT-SPARK), pinned ----
 - git:
