@@ -1,0 +1,21 @@
+---
+# Classes of the trajectory-replay simulator's segmentation camera
+# (segmentation.classes in its environment config). People and robots are
+# dynamic and stay out of the reconstruction.
+total_semantic_labels: 10
+dynamic_labels: [8, 9]
+invalid_labels: [0]
+object_labels: [7]
+surface_places_labels: [1]
+ground_labels: [1]
+label_names:
+  - {label: 0, name: unknown}
+  - {label: 1, name: floor}
+  - {label: 2, name: wall}
+  - {label: 3, name: window}
+  - {label: 4, name: column}
+  - {label: 5, name: stairs}
+  - {label: 6, name: ceiling}
+  - {label: 7, name: kiosk}
+  - {label: 8, name: person}
+  - {label: 9, name: robot}

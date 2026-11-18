@@ -18,4 +18,5 @@ docker run --rm "${TTY[@]}" \
   -v kairos_colcon_build:/ws/build \
   -v kairos_colcon_install:/ws/install \
   -v kairos_colcon_logs:/ws/logs \
+  ${KAIROS_DOCKER_ARGS:-} \
   kairos:dev "$@"

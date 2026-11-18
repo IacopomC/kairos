@@ -1,7 +1,8 @@
 # Workspace for Kairos on ROS 2 Jazzy: `vcs import src < kairos/kairos.repos`
 # from the workspace root, with Kairos itself already cloned to src/kairos.
-# The Kairos repositories track `main`; the upstream MIT-SPARK dependencies
-# are pinned to the commits this build is verified against. The Docker image
+# The Kairos repositories track `main`; the upstream dependencies (MIT-SPARK,
+# and people_msgs from wg-perception) are pinned to the commits this build is
+# verified against. The Docker image
 # (docker/Dockerfile) imports this same file.
 repositories:
   hydra:
@@ -52,6 +53,10 @@ repositories:
     type: git
     url: https://github.com/MIT-SPARK/pose_graph_tools.git
     version: 965dfe864487be9040195c598fd89718563c348c
+  people:
+    type: git
+    url: https://github.com/wg-perception/people.git
+    version: 0ae47f6e0208cedd84d19d066743fdc1d05fcafa
   semantic_inference:
     type: git
     url: https://github.com/MIT-SPARK/semantic_inference.git
